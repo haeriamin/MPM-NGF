@@ -448,7 +448,7 @@ void MPM<3>::rasterize_optimized(real delta_t) {
             dposc[i] = dpos[i] * dpos[(i+1)%3];
           // c8
           const real dposd = dpos[0] * dpos[1] * dpos[2];
-          TC_P(pos);
+          // TC_P(pos);
           // TC_P(grid_pos[node_id]);
           // TC_P(dpos);
           // TC_P(mass_v);
