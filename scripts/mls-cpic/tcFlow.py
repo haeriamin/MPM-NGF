@@ -144,9 +144,10 @@ if __name__ == '__main__':
 # singularity exec ubuntu.simg /bin/bash python install.py
 
 ## install taichi & mpm:
-# python3 install.py # should be edited for the Singularity container
-# #source ~/.bashrc
-# #ti install mpm
+# python3 install.py # customized
+# source ~/.bashrc
+# modify main.py
+# ti install mpm
 
 ## post processing:
 # ffmpeg -framerate 50 -i untitled%d.jpg -c:v libx264 -profile:v high -crf 18 -pix_fmt yuv420p output.mp4
@@ -177,7 +178,7 @@ if __name__ == '__main__':
 
 ## run:
 # ssh a_hae@speed-submit.encs.concordia.ca
-#
+# cd /private/k/kskoniec/a_hae
 # singularity shell -H /private/k/kskoniec/a_hae ubuntu.simg
 # source ~/.bashrc
 # cd /private/k/kskoniec/a_hae/taichi/projects/mpm/scripts/mls-cpic
