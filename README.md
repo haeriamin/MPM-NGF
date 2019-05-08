@@ -4,4 +4,4 @@ This is a customized version of the MLS-MPM code written by [Yuanming Hu (MIT CS
 
 #### [[Introduction & Demo Video](https://www.youtube.com/watch?v=8iyvhGF9f7o)] [[Paper](http://taichi.graphics/wp-content/uploads/2018/05/mls-mpm-cpic.pdf)]
 
-<img src="https://drive.google.com/file/d/1vM5PUlpT4JT6Uml3i2Sff4oHb4cXC2M9/view?usp=sharing">
+<img src="https://github.com/haeriamin/files/blob/master/2.gif">
