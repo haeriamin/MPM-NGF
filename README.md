@@ -1,5 +1,5 @@
 #  High-Performance MLS-MPM with Cutting and Coupling (customized)
-#### [[Introduction & Demo Video](https://www.youtube.com/watch?v=8iyvhGF9f7o)] [[Paper](http://taichi.graphics/wp-content/uploads/2018/05/mls-mpm-cpic.pdf)]
+#### [[Source](https://github.com/yuanming-hu/taichi_mpm)]][[Introduction](https://www.youtube.com/watch?v=8iyvhGF9f7o)] [[Paper](http://taichi.graphics/wp-content/uploads/2018/05/mls-mpm-cpic.pdf)]
 
 This is a customized version of the MLS-MPM code written by [Yuanming Hu (MIT CSAIL)](http://taichi.graphics/me/) for simulating Taylor-Couette flow in reduced gravity. It aims to model and analyze Mars Rovers wheels interacting with deformable terrains.
 
