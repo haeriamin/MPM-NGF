@@ -30,7 +30,7 @@ if __name__ == '__main__':
     gravity                   = (0, oneG, 0),
     particle_gravity          = True,
     rigidBody_gravity         = False,
-    num_threads               = -1,
+    num_threads               = 32, # -1 for max
     rigid_body_collision      = False,
     rigid_body_levelset_collision = False, # apply impulse on rB if its particle's phi<0
     particle_collision        = True,  # update particle pos and vel if its phi<0
@@ -135,64 +135,3 @@ if __name__ == '__main__':
         print_profile_info     = True,
         frame_update           = frame_update,
     )
-
-## Singularity 2.6.1:
-# singularity pull shub://haeriamin/singularity-ubuntu:1604
-# mv haeriamin-singularity-ubuntu-master-1604.simg ubuntu.simg
-# singularity shell -H /private/k/kskoniec/a_hae ubuntu.simg
-# singularity exec -H /private/k/kskoniec/a_hae ubuntu.simg /bin/bash
-# singularity exec ubuntu.simg /bin/bash python install.py
-
-## install taichi & mpm:
-# python3 install.py # customized
-# source ~/.bashrc
-# modify main.py
-# ti install mpm
-
-## post processing:
-# ffmpeg -framerate 50 -i untitled%d.jpg -c:v libx264 -profile:v high -crf 18 -pix_fmt yuv420p output.mp4
-
-## ssh:
-# rsync -v -e ssh ~/Desktop a_hae@speed-submit.encs.concordia.ca:/private/k/kskoniec/a_hae/install.py
-# rsync -v -e ssh ~/Desktop/install.py a_hae@speed-submit.encs.concordia.ca:/private/k/kskoniec/a_hae
-# rsync -avzhe ssh /Volumes/Z/taichi a_hae@speed-submit.encs.concordia.ca:/private/k/kskoniec/a_hae/taichi
-# rsync -avzhe ssh a_hae@speed-submit.encs.concordia.ca:/private/k/kskoniec/a_hae/taichi/outputs/mpm/tcFlow /Volumes/X/
-# to zip on mac: tar cvfz mpmCode.tar.gz mpmCode
-# to unzip on server: tar -zxvf modules-4.2.3.tar.gz
-# to delete on server: rm -f modules-4.2.3.tar.gz // -r for dirs
-# to rename: mv pavel-demin-singularity-ubuntu-master-1804.simg ubuntu.simg
-# /private/k/kskoniec/a_hae/opt/python-3.6.2/bin/python3 install.py
-# vim ~/.bashrc
-# see the used space: du -msh a_hae // du -m a_hae
-# module avail
-# module load python/3.5.1/default
-# module load gcc/5.1/default
-# check os version: cat /etc/*release
-# copy: cp /home/n/nul-uge/tcsh.sh /private/k/kskoniec/a_hae
-
-## vim
-# delete all: dG
-# paste: :set paste OR :set nopaste
-# save and exit: :wq
-# exit: :q
-
-## run:
-# ssh a_hae@speed-submit.encs.concordia.ca
-# cd /private/k/kskoniec/a_hae
-# singularity shell -H /private/k/kskoniec/a_hae ubuntu.simg
-# source ~/.bashrc
-# cd /private/k/kskoniec/a_hae/taichi/projects/mpm/scripts/mls-cpic
-# python3 tcFlow.py
-
-## modify:
-# rsync -avzhe ssh /Volumes/Z/taichi/projects/mpm/data/ a_hae@speed-submit.encs.concordia.ca:/private/k/kskoniec/a_hae/taichi/projects/mpm/data
-# rsync -avzhe ssh /Volumes/Z/taichi/projects/mpm/scripts/mls-cpic/ a_hae@speed-submit.encs.concordia.ca:/private/k/kskoniec/a_hae/taichi/projects/mpm/scripts/mls-cpic
-# rsync -avzhe ssh /Volumes/Z/taichi/projects/mpm/src/ a_hae@speed-submit.encs.concordia.ca:/private/k/kskoniec/a_hae/taichi/projects/mpm/src
-# rsync -avzhe ssh /Volumes/Z/taichi/projects/mpm/scripts/mls-cpic/tcFlow.py a_hae@speed-submit.encs.concordia.ca:/private/k/kskoniec/a_hae/taichi/projects/mpm/scripts/mls-cpic
-# cd /private/k/kskoniec/a_hae/taichi/projects/mpm/src/ ## a file in this folder should be changed using vim not rsync
-# cd /private/k/kskoniec/a_hae/taichi/python/taichi
-# ti build
-
-## results:
-# cd /private/k/kskoniec/a_hae/taichi/outputs/mpm/
-# rsync -avzhe ssh a_hae@speed-submit.encs.concordia.ca:/private/k/kskoniec/a_hae/taichi/outputs/mpm/tcFlow /Volumes/X

@@ -213,8 +213,7 @@ class MPM : public Simulation<dim> {
 
   template <typename T>
   void parallel_for_each_particle(const T &target) {
-    ThreadedTaskManager::run((int)particles.size(), this->num_threads,
-                             [&](int i) { target(*allocator[particles[i]]); });
+    ThreadedTaskManager::run((int)particles.size(), this->num_threads, [&](int i) { target(*allocator[particles[i]]); });
   }
 
  public:
