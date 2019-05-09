@@ -583,10 +583,10 @@ class SandParticle : public MPMParticle<dim> {
   real beta           = 1.0_f;
   // hardening
   bool hardening;
-  real h0 = 50.0_f;
-  real h1 = 9.0_f;
-  real h2 = 0.2_f;
-  real h3 = 10.0_f;
+  // real h0 = 50.0_f;
+  // real h1 = 9.0_f;
+  // real h2 = 0.2_f;
+  // real h3 = 10.0_f;
   TC_IO_DEF_WITH_BASE(lambda_0, mu_0, friction_angle,
                       alpha, cohesion, logJp, beta);
   SandParticle() : MPMParticle<dim>() {
@@ -600,10 +600,10 @@ class SandParticle : public MPMParticle<dim> {
     // hardening
     hardening = config.get("Hardening", true);
     if (hardening){
-      h0 = config.get("h0", h0);
-      h1 = config.get("h1", h1);
-      h2 = config.get("h2", h2);
-      h3 = config.get("h3", h3);
+      // h0 = config.get("h0", h0);
+      // h1 = config.get("h1", h1);
+      // h2 = config.get("h2", h2);
+      // h3 = config.get("h3", h3);
     }else{
       friction_angle = config.get("friction_angle", friction_angle);
       real sin_phi   = std::sin(friction_angle / 180._f * real(3.141592653));
@@ -672,13 +672,13 @@ class SandParticle : public MPMParticle<dim> {
   int plasticity(const Matrix &cdg) override {
 
     // hardening
-    if (hardening){
-      real phi_cs(0.0_f); // critical state friction angle
-      friction_angle      = h0 + (h1*this->q_p - h3) * std::exp(-h2 * this->q_p);
-      real dilation_angle = friction_angle - phi_cs;
-      real sin_phi        = std::sin(dilation_angle / 180._f * real(3.141592653)); // changed
-      alpha               = std::sqrt(2._f / 3._f) * 2._f * sin_phi / (3._f - sin_phi);
-    }
+    // if (hardening){
+    //   real phi_cs(0.0_f); // critical state friction angle
+    //   friction_angle      = h0 + (h1*this->q_p - h3) * std::exp(-h2 * this->q_p);
+    //   real dilation_angle = friction_angle - phi_cs;
+    //   real sin_phi        = std::sin(dilation_angle / 180._f * real(3.141592653)); // changed
+    //   alpha               = std::sqrt(2._f / 3._f) * 2._f * sin_phi / (3._f - sin_phi);
+    // }
 
     // update elastic deformation gradient using C_defGrad
     this->dg_e = cdg * this->dg_e;
@@ -696,7 +696,7 @@ class SandParticle : public MPMParticle<dim> {
     this->dg_e = u * t * transposed(v);
 
     // update hardening state
-    if (hardening){this->q_p += delta_q_p;} // hardening
+    // if (hardening){this->q_p += delta_q_p;} // hardening
 
     return 0;
   }

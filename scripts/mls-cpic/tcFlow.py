@@ -8,7 +8,7 @@ if __name__ == '__main__':
     r            = 301
     dx           = 1/r
     dt           = .0001
-    Omega        = 0.05     # rad/sec
+    Omega        = 0.025     # rad/sec
     finalTime    = 22       # sec
     frameRate    = 50       # Hz
     Scale        = 1        # problem scale
@@ -133,5 +133,5 @@ if __name__ == '__main__':
     mpm.simulate(
         clear_output_directory = True,
         print_profile_info     = True,
-        frame_update           = frame_update,
+        #frame_update           = frame_update,
     )

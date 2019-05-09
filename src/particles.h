@@ -31,7 +31,7 @@ class MPMParticle : public Unit {
   // Affine momemtum (APIC)
   Matrix apic_b;
   Matrix apic_c; // c567
-  Vector apic_d; // c8
+  // Vector apic_d; // c8
   Vector boundary_normal;
   real boundary_distance;
   real vol;
@@ -44,14 +44,15 @@ class MPMParticle : public Unit {
   uint32 states;
   int32 id;
   real debug;
-  real q_p; // hardening
+  // real q_p; // hardening
 
   TC_IO_DEF_VIRT(v_and_m,
                  pos,
                  dg_e,
                  apic_b,
                  apic_c, // c567
-                 apic_d, // c8
+                 // apic_d, // c8
+                 // q_p, // hardening
                  boundary_normal,
                  boundary_distance,
                  vol,
@@ -62,8 +63,7 @@ class MPMParticle : public Unit {
                  near_boundary_,
                  states,
                  id,
-                 is_rigid_,
-                 q_p); // hardening
+                 is_rigid_);
 
 
   TC_FORCE_INLINE bool is_rigid() const {
@@ -92,10 +92,10 @@ class MPMParticle : public Unit {
 
   MPMParticle() {
     dg_e    = Matrix(1.0f);
-    q_p     = 0.0_f; // hardening
+    // q_p     = 0.0_f; // hardening
     apic_b  = Matrix(0);
     apic_c  = Matrix(0); // c567
-    apic_d  = Vector(0); // c8
+    // apic_d  = Vector(0); // c8
     v_and_m = VectorP(0.0f);
     vol     = 1.0f;
     states  = 0;
@@ -212,7 +212,7 @@ TC_INTERFACE(MPMParticle3D);
       "2D MPM particle (" #name ") cannot exceed 192B");              \
   static_assert(                                                      \
       sizeof(name##Particle3D) <= get_particle_size_upper_bound<3>(), \
-      "3D MPM particle (" #name ") cannot exceed 256B");              \
+      "3D MPM particle (" #name ") cannot exceed 320B");              \
   TC_IMPLEMENTATION(MPMParticle2D, name##Particle2D,                  \
                     name##Particle2D().get_name());                   \
   TC_IMPLEMENTATION(MPMParticle3D, name##Particle3D,                  \

@@ -399,7 +399,7 @@ void MPM<3>::rasterize_optimized(real delta_t) {
         // Note, apic_b has delta_x issue
         const Matrix apic_b_inv_d_mass = p.apic_b * (Kernel::inv_D() * mass);   // c234
         const Matrix apic_c_inv_d_mass = p.apic_c * (16.0f * mass);             // c567
-        const Vector apic_d_inv_d_mass = p.apic_d * (64.0f * mass);             // c8
+        // const Vector apic_d_inv_d_mass = p.apic_d * (64.0f * mass);             // c8
 
         const Vector mass_v = mass * v;
         Matrix delta_t_tmp_force(0.0f);
@@ -447,7 +447,7 @@ void MPM<3>::rasterize_optimized(real delta_t) {
           for (int i = 0; i < 3; i++)
             dposc[i] = dpos[i] * dpos[(i+1)%3];
           // c8
-          const real dposd = dpos[0] * dpos[1] * dpos[2];
+          // const real dposd = dpos[0] * dpos[1] * dpos[2];
           // TC_P(pos);
           // TC_P(grid_pos[node_id]);
           // TC_P(dpos);
@@ -459,7 +459,7 @@ void MPM<3>::rasterize_optimized(real delta_t) {
           delta = dw_w[dim]*(VectorP(mass_v
                                   + apic_b_inv_d_mass * dpos
                                   + apic_c_inv_d_mass * dposc // c567
-                                  + apic_d_inv_d_mass * dposd // c8
+                               // + apic_d_inv_d_mass * dposd // c8
                                   , mass) +
                              VectorP(-delta_t_tmp_force * dpos * 4.0_f * inv_delta_x));
 #else
@@ -525,7 +525,7 @@ void MPM<3>::rasterize_optimized(real delta_t) {
         // Note, apic_b has delta_x issue --------------------------------------
         const Matrix apic_b_inv_d_mass = p.apic_b * (Kernel::inv_D() * mass);   // c234, inv_D()=4, it has the effect of 1/dx^2
         const Matrix apic_c_inv_d_mass = p.apic_c * (16.0f * mass);             // c567, it has the effect of 1/dx^4 using dpos
-        const Vector apic_d_inv_d_mass = p.apic_d * (64.0f * mass);             // c8,   it has the effect of 1/dx^6 using dpos
+        // const Vector apic_d_inv_d_mass = p.apic_d * (64.0f * mass);             // c8,   it has the effect of 1/dx^6 using dpos
 
         // TC_P(apic_b_inv_d_mass);
 
@@ -556,14 +556,8 @@ void MPM<3>::rasterize_optimized(real delta_t) {
           affine[i] = _mm_fmadd_ps(stress[i], S, apic_b_inv_d_mass[i]);
         }
 
-        // __m128 SS   = _mm_set1_ps(0.5_f);
+        // __m128 SS    = _mm_set1_ps(0.5_f);
         // __m128 dpos0 = _mm_mul_ps(dpos, SS);
-
-        // option 1:
-        // for (int i = 0; i < 3; i++){
-        //   affine[i] = _mm_fmadd_ps(apic_c_inv_d_mass[i], broadcast(dpos,(i+1)%3),
-        //                            affine[i]);
-        // }
 
         // option 2:
         // for (int i = 0; i < 3; i++){
@@ -575,7 +569,9 @@ void MPM<3>::rasterize_optimized(real delta_t) {
         // acp = _mm_add_ps(ac[0], _mm_add_ps(ac[1], ac[2]));
         // db = _mm_mul_ps(weight, abp);
         // dc = _mm_mul_ps(weight, acp);
-
+        // ad = _mm_mul_ps(apic_d_inv_d_mass, _mm_mul_ps(broadcast(dpos,1),
+                                           // _mm_mul_ps(broadcast(dpos,2),
+                                                      // broadcast(dpos,3))));
         // affine_prod = _mm_add_ps(affine_prod, acp);
         // affine_prod = _mm_add_ps(affine_prod, ad);
 
@@ -601,9 +597,6 @@ void MPM<3>::rasterize_optimized(real delta_t) {
     } \
     acp         = _mm_add_ps(ac[0], _mm_add_ps(ac[1], ac[2])); \
     affine_prod = _mm_add_ps(affine_prod, acp); \
-    ad = _mm_mul_ps(apic_d_inv_d_mass, _mm_mul_ps(broadcast(dpos,1), \
-                                       _mm_mul_ps(broadcast(dpos,2), \
-                                                  broadcast(dpos,3)))); \
     __m128 contrib = _mm_blend_ps(mass_, affine_prod, 0x7);                    \
     __m128 delta = _mm_mul_ps(weight, contrib);                                \
     __m128 g =                                                                 \
@@ -989,7 +982,7 @@ void MPM<3>::resample_optimized() {
         __m128 cdg_[3];
         __m128 b_[3]; // c234
         __m128 c_[3]; // c567
-        __m128 d_ = _mm_setzero_ps(); // c8
+        // __m128 d_ = _mm_setzero_ps(); // c8
         for (int i = 0; i < dim; i++) {
           b_[i]   = _mm_setzero_ps();
           c_[i]   = _mm_setzero_ps(); // c567
@@ -998,6 +991,11 @@ void MPM<3>::resample_optimized() {
         __m128 v_       = _mm_setzero_ps();
         __m128 pos_     = pos.v;
         __m128 rela_pos = _mm_sub_ps(pos_, grid_base_pos_f);
+
+        // d_ = _mm_fmadd_ps(w_grid_vel, _mm_mul_ps(broadcast(dpos,1),
+        //                               _mm_mul_ps(broadcast(dpos,2),
+        //                                          broadcast(dpos,3))),
+        //                                                               d_);
 
 // dpos = p.pos - g.pos
 // w = kernels[3][3][3], uses 'MLSMPMFastKernel32'
@@ -1020,10 +1018,6 @@ void MPM<3>::resample_optimized() {
       c_[r] = _mm_fmadd_ps(w_grid_vel, broadcast(dpos, r), c_[r]);  \
       c_[r] = _mm_fmadd_ps(c_[r], broadcast(dpos, (r+1)%3), c_[r]); \
     } \
-    d_ = _mm_fmadd_ps(w_grid_vel, _mm_mul_ps(broadcast(dpos,1),   \
-                                  _mm_mul_ps(broadcast(dpos,2),   \
-                                             broadcast(dpos,3))), \
-                                                                  d_); \
   }
 #else
 #define LOOP(node_id)                                                          \
@@ -1054,7 +1048,7 @@ void MPM<3>::resample_optimized() {
             p.apic_b[i].v = b_[i];
             p.apic_c[i].v = c_[i]; // c567
           }
-          p.apic_d.v = d_; // c8
+          // p.apic_d.v = d_; // c8
         }
         // why dpos is larger than 1? because the grid is divided to subgrids
         //p.apic_a[0].v = dpos;
