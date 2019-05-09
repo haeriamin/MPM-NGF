@@ -13,6 +13,7 @@
 
 TC_NAMESPACE_BEGIN
 
+// write_partio ----------------------------------------------------------------
 template <int dim>
 void MPM<dim>::write_partio(const std::string &file_name) const {
   Partio::ParticlesDataMutable *parts = Partio::create();
@@ -81,9 +82,7 @@ void MPM<dim>::write_partio(const std::string &file_name) const {
     int *index_p = parts->dataWrite<int>(indexH, idx);
     int *limit_p = parts->dataWrite<int>(limitH, idx);
     float32 *p_p = parts->dataWrite<float32>(posH, idx);
-
     Vector pos = p->pos;
-
     for (int k = 0; k < 3; k++)
       p_p[k] = 0.f;
 
@@ -99,6 +98,7 @@ void MPM<dim>::write_partio(const std::string &file_name) const {
   parts->release();
 }
 
+// write_rigid_body ------------------------------------------------------------
 template <int dim>
 void MPM<dim>::write_rigid_body(RigidBody<dim> const *rigid,
                                 const std::string &file_name) const {
@@ -153,7 +153,7 @@ void MPM<dim>::write_rigid_body(RigidBody<dim> const *rigid,
   TC_STATIC_END_IF
 }
 
-//------------------------------------------------------------------------------
+// write_particle --------------------------------------------------------------
 template <int dim>
 void MPM<dim>::write_particle(const std::string &file_name) const {
     Partio::ParticlesDataMutable *parts = Partio::create();
@@ -172,31 +172,26 @@ void MPM<dim>::write_particle(const std::string &file_name) const {
               [&](ParticlePtr a, ParticlePtr b) {
                 return allocator.get_const(a)->id < allocator.get_const(b)->id;
               });
-    std::string fn = file_name + std::string(".txt");
+    std::string fn = file_name + std::string(".csv");
     FILE *f = std::fopen(fn.c_str(), "w");
     for (auto p_i : particles_sorted) {
       const Particle *p = allocator.get_const(p_i);
-      int idx = parts->addParticle();
-
-      Vector vel = p->get_velocity();
+      int idx      = parts->addParticle();
+      Vector vel   = p->get_velocity();
       float32 *v_p = parts->dataWrite<float32>(vH, idx);
       for (int k = 0; k < 3; k++)
         v_p[k] = 0.f;
       for (int k = 0; k < dim; k++)
         v_p[k] = vel[k];
-      int *type_p = parts->dataWrite<int>(typeH, idx);
-      int *index_p = parts->dataWrite<int>(indexH, idx);
-      int *limit_p = parts->dataWrite<int>(limitH, idx);
-      float32 *p_p = parts->dataWrite<float32>(posH, idx);
-//------------------------------------------------------------------------------
-      int *bound_p = parts->dataWrite<int>(boundH, idx);
+      int *type_p     = parts->dataWrite<int>(typeH, idx);
+      int *index_p    = parts->dataWrite<int>(indexH, idx);
+      int *limit_p    = parts->dataWrite<int>(limitH, idx);
+      float32 *p_p    = parts->dataWrite<float32>(posH, idx);
+      int *bound_p    = parts->dataWrite<int>(boundH, idx);
       float32 *dist_p = parts->dataWrite<float32>(distH, idx);
-//------------------------------------------------------------------------------
       Vector pos = p->pos;
-
       for (int k = 0; k < 3; k++)
         p_p[k] = 0.f;
-
       for (int k = 0; k < dim; k++)
         p_p[k] = pos[k];
       type_p[0] = int(p->is_rigid());
@@ -204,17 +199,16 @@ void MPM<dim>::write_particle(const std::string &file_name) const {
       limit_p[0] = p->dt_limit;
       limit_p[1] = p->stiffness_limit;
       limit_p[2] = p->cfl_limit;
-//------------------------------------------------------------------------------
       bound_p[0] = p->near_boundary();
       dist_p[0]  = p->boundary_distance;
-//------------------------------------------------------------------------------
 
       fmt::print(f, "{} {} {} {} {} {} {} {} {}\n",
         type_p[0], p_p[0], p_p[1], p_p[2], v_p[0], v_p[1], v_p[2],
         bound_p[0], dist_p[0]);
     }
     std::fclose(f);
-    // Partio::write(file_name.c_str(), *parts);
+    //Partio::write(file_name.c_str(), *parts);
+    parts->release();
 }
 //------------------------------------------------------------------------------
 
@@ -228,10 +222,8 @@ void MPM<2>::visualize() const {
 }
 template void MPM<2>::write_partio(const std::string &file_name) const;
 template void MPM<3>::write_partio(const std::string &file_name) const;
-template void MPM<2>::write_rigid_body(RigidBody<2> const *rigid,
-                                       const std::string &file_name) const;
-template void MPM<3>::write_rigid_body(RigidBody<3> const *rigid,
-                                       const std::string &file_name) const;
+template void MPM<2>::write_rigid_body(RigidBody<2> const *rigid, const std::string &file_name) const;
+template void MPM<3>::write_rigid_body(RigidBody<3> const *rigid, const std::string &file_name) const;
 //------------------------------------------------------------------------------
 template void MPM<2>::write_particle(const std::string &file_name) const;
 template void MPM<3>::write_particle(const std::string &file_name) const;

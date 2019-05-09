@@ -246,9 +246,7 @@ class MPM : public Simulation<dim> {
 
   virtual void visualize() const override;
   void write_partio(const std::string &file_name) const;
-  void write_rigid_body(RigidBody<dim> const *rigid,
-                        const std::string &file_name) const;
-
+  void write_rigid_body(RigidBody<dim> const *rigid, const std::string &file_name) const;
 //------------------------------------------------------------------------------
   void write_particle(const std::string &file_name) const;
 //------------------------------------------------------------------------------
@@ -325,15 +323,17 @@ class MPM : public Simulation<dim> {
   void write_bgeo() const {
     ++(const_cast<MPM<dim> *>(this)->frame_count);
     std::string directory = config_backup.get_string("frame_directory");
+    std::string filename;
 //------------------------------------------------------------------------------
-  if (frame_count%50 == 0 || frame_count == 1) {
-    std::string filename = fmt::format("{}/particle_{:04}", directory, frame_count);
-    write_particle(filename);
-  }
+    if (frame_count%50 == 0 || frame_count == 1) {
+      filename = fmt::format("{}/particle_{:04}", directory, frame_count);
+      write_particle(filename);
+    }
+
     bool Houdini = config_backup.get("Houdini", true);
     if (Houdini){
 //------------------------------------------------------------------------------
-      std::string filename = fmt::format("{}/{:04}.bgeo", directory, frame_count);
+      filename = fmt::format("{}/{:04}.bgeo", directory, frame_count);
       write_partio(filename);
       // Start from 1 (0 is the background rigid body.)
       for (int i = 1; i < (int)rigids.size(); i++) {
