@@ -100,8 +100,8 @@ void MPM<dim>::write_partio(const std::string &file_name) const {
 
 // write_rigid_body ------------------------------------------------------------
 template <int dim>
-void MPM<dim>::write_rigid_body(RigidBody<dim> const *rigid,
-                                const std::string &file_name) const {
+void MPM<dim>::write_rigid_body(RigidBody<dim> const *rigid, const std::string &file_name) const {
+  // 2D
   TC_STATIC_IF(dim == 2) {
     auto &mesh = rigid->mesh;
     auto const &trans = rigid->get_mesh_to_world();
@@ -124,11 +124,11 @@ void MPM<dim>::write_rigid_body(RigidBody<dim> const *rigid,
     for (int i = 1; i <= index / 2; ++i) {
       fmt::print(f, "{}: {} {}\n", i, i * 2 - 1, i * 2);
     }
-
     fmt::print(f, "END\n");
-
     fclose(f);
   }
+
+  // 3D
   TC_STATIC_ELSE {
     auto &mesh = rigid->mesh;
     auto const &trans = rigid->get_mesh_to_world();
@@ -143,8 +143,7 @@ void MPM<dim>::write_rigid_body(RigidBody<dim> const *rigid,
     }
     int counter = 0;
     for (auto &_ : mesh->elements) {
-      fmt::print(f, "f {} {} {}\n", dim * counter + 1, dim * counter + 2,
-                 dim * counter + 3);
+      fmt::print(f, "f {} {} {}\n", dim * counter + 1, dim * counter + 2, dim * counter + 3);
       counter++;
       trash(_);
     }
@@ -157,57 +156,60 @@ void MPM<dim>::write_rigid_body(RigidBody<dim> const *rigid,
 template <int dim>
 void MPM<dim>::write_particle(const std::string &file_name) const {
     Partio::ParticlesDataMutable *parts = Partio::create();
-    Partio::ParticleAttribute posH, vH, typeH, indexH, limitH, distH, boundH;
+    Partio::ParticleAttribute posH, vH, typeH, distH, boundH;
+    // Partio::ParticleAttribute indexH, limitH;
 
     posH   = parts->addAttribute("position", Partio::VECTOR, 3);
     typeH  = parts->addAttribute("type", Partio::INT, 1);
-    indexH = parts->addAttribute("index", Partio::INT, 1);
-    limitH = parts->addAttribute("limit", Partio::INT, 3);
     vH     = parts->addAttribute("v", Partio::VECTOR, 3);
     distH  = parts->addAttribute("boundary_distance", Partio::FLOAT, 1);
     boundH = parts->addAttribute("near_boundary", Partio::INT, 1);
+    // indexH = parts->addAttribute("index", Partio::INT, 1);
+    // limitH = parts->addAttribute("limit", Partio::INT, 3);
 
     auto particles_sorted = particles;
-    std::sort(particles_sorted.begin(), particles_sorted.end(),
-              [&](ParticlePtr a, ParticlePtr b) {
+    std::sort(particles_sorted.begin(), particles_sorted.end(), [&](ParticlePtr a, ParticlePtr b) {
                 return allocator.get_const(a)->id < allocator.get_const(b)->id;
               });
-    std::string fn = file_name + std::string(".csv");
+
+    std::string fn = file_name + std::string(".txt");
     FILE *f = std::fopen(fn.c_str(), "w");
+
     for (auto p_i : particles_sorted) {
       const Particle *p = allocator.get_const(p_i);
-      int idx      = parts->addParticle();
-      Vector vel   = p->get_velocity();
-      float32 *v_p = parts->dataWrite<float32>(vH, idx);
-      for (int k = 0; k < 3; k++)
-        v_p[k] = 0.f;
-      for (int k = 0; k < dim; k++)
-        v_p[k] = vel[k];
+
+      int idx         = parts->addParticle();
+      Vector vel      = p->get_velocity();
+      Vector pos      = p->pos;
+
+      float32 *v_p    = parts->dataWrite<float32>(vH, idx);
       int *type_p     = parts->dataWrite<int>(typeH, idx);
-      int *index_p    = parts->dataWrite<int>(indexH, idx);
-      int *limit_p    = parts->dataWrite<int>(limitH, idx);
       float32 *p_p    = parts->dataWrite<float32>(posH, idx);
       int *bound_p    = parts->dataWrite<int>(boundH, idx);
       float32 *dist_p = parts->dataWrite<float32>(distH, idx);
-      Vector pos = p->pos;
+      // int *index_p    = parts->dataWrite<int>(indexH, idx);
+      // int *limit_p    = parts->dataWrite<int>(limitH, idx);
+
       for (int k = 0; k < 3; k++)
         p_p[k] = 0.f;
       for (int k = 0; k < dim; k++)
         p_p[k] = pos[k];
-      type_p[0] = int(p->is_rigid());
-      index_p[0] = p->id;
-      limit_p[0] = p->dt_limit;
-      limit_p[1] = p->stiffness_limit;
-      limit_p[2] = p->cfl_limit;
+      for (int k = 0; k < 3; k++)
+        v_p[k] = 0.f;
+      for (int k = 0; k < dim; k++)
+        v_p[k] = vel[k];
+      type_p[0]  = int(p->is_rigid());
       bound_p[0] = p->near_boundary();
       dist_p[0]  = p->boundary_distance;
+      // index_p[0] = p->id;
+      // limit_p[0] = p->dt_limit;
+      // limit_p[1] = p->stiffness_limit;
+      // limit_p[2] = p->cfl_limit;
 
       fmt::print(f, "{} {} {} {} {} {} {} {} {}\n",
-        type_p[0], p_p[0], p_p[1], p_p[2], v_p[0], v_p[1], v_p[2],
-        bound_p[0], dist_p[0]);
+                 type_p[0], p_p[0], p_p[1], p_p[2], v_p[0], v_p[1], v_p[2], bound_p[0], dist_p[0]);
     }
     std::fclose(f);
-    //Partio::write(file_name.c_str(), *parts);
     parts->release();
 }
 //------------------------------------------------------------------------------

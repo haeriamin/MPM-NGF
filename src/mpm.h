@@ -325,10 +325,10 @@ class MPM : public Simulation<dim> {
     std::string directory = config_backup.get_string("frame_directory");
     std::string filename;
 //------------------------------------------------------------------------------
-    if (frame_count%50 == 0 || frame_count == 1) {
-      filename = fmt::format("{}/particle_{:04}", directory, frame_count);
-      write_particle(filename);
-    }
+    // if (frame_count%50 == 0 || frame_count == 1) {
+    //   filename = fmt::format("{}/particle_{:04}", directory, frame_count);
+    //   write_particle(filename);
+    // } 
 
     bool Houdini = config_backup.get("Houdini", true);
     if (Houdini){
