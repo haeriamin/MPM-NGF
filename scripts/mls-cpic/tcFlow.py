@@ -1,9 +1,7 @@
 # Taylor-Couette Flow, by Amin Haeri [email](ahaeri92@gmail.com)
-from os import system
-def execute_command(line):
-  print('Executing command:', line)
-  return system(line)
-execute_command('source ~/.bashrc')
+# import os
+# myCMD = '. /private/k/kskoniec/a_hae/.bashrc'
+# os.system(myCMD)
 
 import taichi as tc
 import math
