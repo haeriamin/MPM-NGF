@@ -1,7 +1,10 @@
 # Taylor-Couette Flow, by Amin Haeri [email](ahaeri92@gmail.com)
-# # from /ppo: models
-# from ppo.mpm import *
-# from ppo.trainer import Trainer # Trainer is a class in trainer.py located in /ppo folder
+from os import system
+def execute_command(line):
+  print('Executing command:', line)
+  return system(line)
+execute_command('source ~/.bashrc')
+
 import taichi as tc
 import math
 if __name__ == '__main__':
