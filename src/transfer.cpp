@@ -387,8 +387,8 @@ void MPM<3>::rasterize_optimized(real delta_t) {
         const Vector pos = p.pos * inv_delta_x;
 
         // particle kernel (weight function) --------------- not pos-grid_pos !!
-        // (- grid_base_pos_f) added
-        Kernel kernel(pos - grid_base_pos_f, inv_delta_x);
+        // (- grid_base_pos_f) added? //////////////////////////////////////////
+        Kernel kernel(pos, inv_delta_x);
         const VectorP(&kernels)[3][3][3]           = kernel.kernels;
         using KernelLinearized                     = VectorP[27];
         const KernelLinearized &kernels_linearized = *reinterpret_cast<const KernelLinearized *>(&kernels[0][0][0]);
@@ -398,8 +398,8 @@ void MPM<3>::rasterize_optimized(real delta_t) {
 
         // Note, apic_b has delta_x issue
         const Matrix apic_b_inv_d_mass = p.apic_b * (Kernel::inv_D() * mass);   // c234
-        const Matrix apic_c_inv_d_mass = p.apic_c * (16.0f * mass);             // c567
-        // const Vector apic_d_inv_d_mass = p.apic_d * (64.0f * mass);             // c8
+        // const Matrix apic_c_inv_d_mass = p.apic_c * (16.0f * mass);          // c567
+        // const Vector apic_d_inv_d_mass = p.apic_d * (64.0f * mass);          // c8
 
         const Vector mass_v = mass * v;
         Matrix delta_t_tmp_force(0.0f);
@@ -409,7 +409,6 @@ void MPM<3>::rasterize_optimized(real delta_t) {
 
         // for each node
         for (int node_id = 0; node_id < Cache::num_nodes; node_id++) {
-          // +Vector(-0.5f) added
           Vector dpos         = pos - grid_pos[node_id];
           GridState<dim> &g   = grid_cache.linear[grid_cache.kernel_linearized(node_id) + grid_cache_offset];
           const VectorP &dw_w = kernels_linearized[node_id];
@@ -443,11 +442,12 @@ void MPM<3>::rasterize_optimized(real delta_t) {
 
           VectorP delta;
           // c567
-          Vector dposc;
-          for (int i = 0; i < 3; i++)
-            dposc[i] = dpos[i] * dpos[(i+1)%3];
+          // Vector dposc;
+          // for (int i = 0; i < 3; i++)
+            // dposc[i] = dpos[i] * dpos[(i+1)%3];
           // c8
           // const real dposd = dpos[0] * dpos[1] * dpos[2];
+
           // TC_P(pos);
           // TC_P(grid_pos[node_id]);
           // TC_P(dpos);
@@ -455,12 +455,13 @@ void MPM<3>::rasterize_optimized(real delta_t) {
           // TC_P(apic_b_inv_d_mass * dpos);
           // TC_P(apic_c_inv_d_mass * dposc);
           // TC_P(apic_d_inv_d_mass * dposd);
+
 #ifdef MLSMPM
           delta = dw_w[dim]*(VectorP(mass_v
-                                  + apic_b_inv_d_mass * dpos
-                                  + apic_c_inv_d_mass * dposc // c567
-                               // + apic_d_inv_d_mass * dposd // c8
-                                  , mass) +
+                                   + apic_b_inv_d_mass * dpos
+                                   // + apic_c_inv_d_mass * dposc // c567
+                                   // + apic_d_inv_d_mass * dposd // c8
+                                   , mass) +
                              VectorP(-delta_t_tmp_force * dpos * 4.0_f * inv_delta_x));
 #else
           delta = dw_w[dim]* VectorP(mass_v + apic_b_inv_d_mass * dpos, mass) +
@@ -474,6 +475,7 @@ void MPM<3>::rasterize_optimized(real delta_t) {
 
   // block_op_normal, called from block_op_switch ------------------------------
   __m128 S = _mm_set1_ps(-4.0_f * inv_delta_x * delta_t);
+
   auto block_op_normal = [&](uint32 b, uint64 block_offset, GridState<dim> *g_) {
     using Cache = GridCache<MPM<dim>, true>;
     Cache grid_cache(*grid, block_offset, true);
@@ -501,8 +503,6 @@ void MPM<3>::rasterize_optimized(real delta_t) {
         // Note, pos is magnified grid pos - or particle pos? ------------------
         __m128 pos_ = _mm_mul_ps(p.pos.v, _mm_set1_ps(inv_delta_x));
 
-        // TC_P(p.pos*inv_delta_x - grid_base_pos_f); // is between .5 and 1.5 only
-
 // kernel
 #if defined(MLSMPM)
         MLSMPMFastKernel32 kernel(_mm_sub_ps(pos_, grid_base_pos_f), inv_delta_x);
@@ -524,8 +524,8 @@ void MPM<3>::rasterize_optimized(real delta_t) {
 
         // Note, apic_b has delta_x issue --------------------------------------
         const Matrix apic_b_inv_d_mass = p.apic_b * (Kernel::inv_D() * mass);   // c234, inv_D()=4, it has the effect of 1/dx^2
-        const Matrix apic_c_inv_d_mass = p.apic_c * (16.0f * mass);             // c567, it has the effect of 1/dx^4 using dpos
-        // const Vector apic_d_inv_d_mass = p.apic_d * (64.0f * mass);             // c8,   it has the effect of 1/dx^6 using dpos
+        // const Matrix apic_c_inv_d_mass = p.apic_c * (16.0f * mass);              // c567, it has the effect of 1/dx^4 using dpos
+        // const Vector apic_d_inv_d_mass = p.apic_d * (64.0f * mass);              // c8,   it has the effect of 1/dx^6 using dpos
 
         // TC_P(apic_b_inv_d_mass);
 
@@ -547,8 +547,8 @@ void MPM<3>::rasterize_optimized(real delta_t) {
         // rela_pos     = _mm_sub_ps(rela_pos, err); // rela-pos modified ------
 
         __m128 affine[3];
-        __m128 ac[3], ad;
-        __m128 acp;
+        // __m128 ac[3], ad;
+        // __m128 acp;
 
         // affine = (stress)(S) + (apic_b)(D^-1)(mass)
         // S      = [-4dt/dx] [-4dt/dx] [-4dt/dx] [-4dt/dx]
@@ -558,6 +558,13 @@ void MPM<3>::rasterize_optimized(real delta_t) {
 
         // __m128 SS    = _mm_set1_ps(0.5_f);
         // __m128 dpos0 = _mm_mul_ps(dpos, SS);
+
+        // for (int i = 0; i < 3; i++){
+        //   ac[i] = _mm_mul_ps(apic_c_inv_d_mass[i], broadcast(dpos,i));
+        //   ac[i] = _mm_mul_ps(ac[i], broadcast(dpos,(i+1)%3));
+        // }
+        // acp         = _mm_add_ps(ac[0], _mm_add_ps(ac[1], ac[2]));
+        // affine_prod = _mm_add_ps(affine_prod, acp);
 
         // option 2:
         // for (int i = 0; i < 3; i++){
@@ -591,12 +598,6 @@ void MPM<3>::rasterize_optimized(real delta_t) {
         _mm_fmadd_ps(affine[2], broadcast(dpos, 2),                            \
             _mm_fmadd_ps(affine[1], broadcast(dpos, 1),                        \
                  _mm_fmadd_ps(affine[0], broadcast(dpos, 0), mass_v)));        \
-    for (int i = 0; i < 3; i++){ \
-      ac[i] = _mm_mul_ps(apic_c_inv_d_mass[i], broadcast(dpos,i)); \
-      ac[i] = _mm_mul_ps(ac[i], broadcast(dpos,(i+1)%3)); \
-    } \
-    acp         = _mm_add_ps(ac[0], _mm_add_ps(ac[1], ac[2])); \
-    affine_prod = _mm_add_ps(affine_prod, acp); \
     __m128 contrib = _mm_blend_ps(mass_, affine_prod, 0x7);                    \
     __m128 delta = _mm_mul_ps(weight, contrib);                                \
     __m128 g =                                                                 \
@@ -788,22 +789,19 @@ void MPM<3>::resample_optimized() {
     int particle_begin;
     int particle_end = block_meta[b].particle_offset;
 
+    // for each grid
     for (uint32 t = 0; t < SparseMask::elements_per_block; t++) {
       particle_begin = particle_end;
 
       // number of particles in grid
-      particle_end += g[t].particle_count;
-
-      int grid_cache_offset = grid_cache.spgrid_block_to_grid_cache_block(t);
-
-      Vectori grid_base_pos = Vectori(SparseMask::LinearToCoord(block_offset)) +
-                              grid_cache.spgrid_block_linear_to_vector(t);
+      particle_end          += g[t].particle_count;
+      int grid_cache_offset  = grid_cache.spgrid_block_to_grid_cache_block(t);
+      Vectori grid_base_pos  = Vectori(SparseMask::LinearToCoord(block_offset)) + grid_cache.spgrid_block_linear_to_vector(t);
       Vector grid_base_pos_f = Vector(grid_base_pos);
 
       Vector grid_pos[27];
-      for (int i = 0; i < 27; i++) {
+      for (int i = 0; i < 27; i++)
         grid_pos[i] = grid_pos_offset[i] + grid_base_pos_f;
-      }
 
       // for each non-rigid particle in grid
       for (int k = particle_begin; k < particle_end; k++) {
@@ -816,28 +814,25 @@ void MPM<3>::resample_optimized() {
         real delta_t = base_delta_t;
         Vector v(0.0f);
         Matrix b(0.0f);
+        // Matrix c(0.0f); // c567
+        // Vector d(0.0f); // c8
         Matrix cdg(0.0f);
         Vector pos = p.pos * this->inv_delta_x;
 
         RegionND<dim> region(VectorI(0), VectorI(Kernel::kernel_size));
 
         Kernel kernel(pos, inv_delta_x);
-        const VectorP(&kernels)[3][3][3] = kernel.kernels;
-        using KernelLinearized = VectorP[27];
-        const KernelLinearized &kernels_linearized =
-            *reinterpret_cast<const KernelLinearized *>(&kernels[0][0][0]);
+        const VectorP(&kernels)[3][3][3]           = kernel.kernels;
+        using KernelLinearized                     = VectorP[27];
+        const KernelLinearized &kernels_linearized = *reinterpret_cast<const KernelLinearized *>(&kernels[0][0][0]);
 
         int rigid_id = -1;
 
         // for each node
         for (int node_id = 0; node_id < Cache::num_nodes; node_id++) {
-          Vector dpos = pos - grid_pos[node_id];
-
-          GridState<dim> &g =
-              grid_cache.linear[grid_cache.kernel_linearized(node_id) +
-                                grid_cache_offset];
-
-          auto grid_vel = Vector(g.velocity_and_mass);
+          Vector dpos         = pos - grid_pos[node_id];
+          GridState<dim> &g   = grid_cache.linear[grid_cache.kernel_linearized(node_id) + grid_cache_offset];
+          auto grid_vel       = Vector(g.velocity_and_mass);
           const VectorP &dw_w = kernels_linearized[node_id];
 
           // Coloring
@@ -864,11 +859,9 @@ void MPM<3>::resample_optimized() {
 
             // if particle is near boundary
             if (p.near_boundary()) {
-
               // not used
               Vector tv = p.get_velocity() - v_g;
-              tv = tv - p.boundary_normal*std::min(0.0_f,
-                                                dot(p.boundary_normal, tv));
+              tv = tv - p.boundary_normal*std::min(0.0_f, dot(p.boundary_normal, tv));
 
               // add pushing force, if near boundary ---------------------------
               fake_v = friction_project(
@@ -886,19 +879,28 @@ void MPM<3>::resample_optimized() {
 
           // *** b += Matrix::outer_product(dw_w[dim] * grid_vel, dpos);
           //     cdg += Matrix::outer_product(grid_vel, Vector(dw_w));
+
+          // d = fused_mul_add(w_grid_vel,
+          //       fused_mul_add(Vector(dpos[1]), fused_mul_add(Vector(dpos[2]), Vector(dpos[3]), Vector(0)), Vector(0)),
+          //         d);
+
           Vector w_grid_vel = dw_w[dim] * grid_vel;
           for (int r = 0; r < dim; r++) {
             b[r]   = fused_mul_add(w_grid_vel, Vector(dpos[r]), b[r]);
+            // c[r]   = fused_mul_add(w_grid_vel, Vector(dpos[r]), c[r]);
+            // c[r]   = fused_mul_add(c[r], Vector(dpos[(r+1)%3]), c[r]);
             cdg[r] = fused_mul_add(grid_vel, Vector(dw_w[r]), cdg[r]);
           }
         }
 
         if (p.near_boundary()) {
           p.apic_b = Matrix(0);
-          //p.apic_c = Matrix(0); // c567
+          // p.apic_c = Matrix(0); // c567
+          // p.apic_d = Vector(0); // c8
         } else {
           p.apic_b = damp_affine_momemtum(b);
-          //p.apic_c = Matrix(0); // c567
+          // p.apic_c = damp_affine_momemtum(c); // c567
+          // p.apic_d = d; // c8
         }
 
         // set non-rigid particle velocity (v) ---------------------------------
@@ -946,6 +948,7 @@ void MPM<3>::resample_optimized() {
 
     real inv_delta_x = this->inv_delta_x;
 
+    // for each grid cell inside the block
     for (uint32 t = 0; t < SparseMask::elements_per_block; t++) {
       particle_begin = particle_end;
       particle_end  += g[t].particle_count;
@@ -954,14 +957,11 @@ void MPM<3>::resample_optimized() {
       Vectori grid_base_pos  = Vectori(SparseMask::LinearToCoord(block_offset)) + grid_cache.spgrid_block_linear_to_vector(t);
       Vector grid_base_pos_f = Vector(grid_base_pos);
 
-      //TC_P(grid_base_pos_f);
-
-      // for all particles including rigid and non-rigid particles -------------
+      // for each particle inside the grid cell
       for (int k = particle_begin; k < particle_end; k++) {
         Particle &p  = *allocator[particles[k]];
         real delta_t = base_delta_t;
         Vector pos   = p.pos * inv_delta_x; // ---------------------------------
-
         //TC_P(pos);
 
 // kernel
@@ -981,23 +981,24 @@ void MPM<3>::resample_optimized() {
         // SIMD Def Region
         __m128 cdg_[3];
         __m128 b_[3]; // c234
-        __m128 c_[3]; // c567
+        // __m128 c_[3]; // c567
         // __m128 d_ = _mm_setzero_ps(); // c8
         for (int i = 0; i < dim; i++) {
           b_[i]   = _mm_setzero_ps();
-          c_[i]   = _mm_setzero_ps(); // c567
+          // c_[i]   = _mm_setzero_ps(); // c567
           cdg_[i] = _mm_setzero_ps();
         }
         __m128 v_       = _mm_setzero_ps();
         __m128 pos_     = pos.v;
         __m128 rela_pos = _mm_sub_ps(pos_, grid_base_pos_f);
 
+        // c_[r] = _mm_fmadd_ps(w_grid_vel, broadcast(dpos, r), c_[r]);
+        // c_[r] = _mm_fmadd_ps(c_[r], broadcast(dpos, (r+1)%3), c_[r]);
+
         // d_ = _mm_fmadd_ps(w_grid_vel, _mm_mul_ps(broadcast(dpos,1),
         //                               _mm_mul_ps(broadcast(dpos,2),
-        //                                          broadcast(dpos,3))),
-        //                                                               d_);
+        //                                          broadcast(dpos,3))), d_);
 
-// dpos = p.pos - g.pos
 // w = kernels[3][3][3], uses 'MLSMPMFastKernel32'
 // w_grid_vel = (w)(grid_vel)
 #if defined(MLSMPM)
@@ -1015,9 +1016,7 @@ void MPM<3>::resample_optimized() {
     __m128 w_grid_vel = _mm_mul_ps(w, grid_vel);                               \
     for (int r = 0; r < dim; r++) {                                            \
       b_[r] = _mm_fmadd_ps(w_grid_vel, broadcast(dpos, r), b_[r]);             \
-      c_[r] = _mm_fmadd_ps(w_grid_vel, broadcast(dpos, r), c_[r]);  \
-      c_[r] = _mm_fmadd_ps(c_[r], broadcast(dpos, (r+1)%3), c_[r]); \
-    } \
+    }                                                                          \
   }
 #else
 #define LOOP(node_id)                                                          \
@@ -1046,7 +1045,7 @@ void MPM<3>::resample_optimized() {
         } else {
           for (int i = 0; i < dim; i++) {
             p.apic_b[i].v = b_[i];
-            p.apic_c[i].v = c_[i]; // c567
+            // p.apic_c[i].v = c_[i]; // c567
           }
           // p.apic_d.v = d_; // c8
         }
@@ -1062,6 +1061,7 @@ void MPM<3>::resample_optimized() {
         // use APIC as dv/dx for calculating F ---------------------------------
         // C_defGrad = I + dt * (-4/dx^2)*APIC
         // '(-4/dx^2)*APIC' is 'cp2to4' in the PolyPIC paper format
+
         __m128 scale = _mm_set1_ps(-4.0_f * inv_delta_x * delta_t);
 
         cdg_[0] = _mm_fmadd_ps(scale, b_[0], _mm_set_ps(0, 0, 0, 1));

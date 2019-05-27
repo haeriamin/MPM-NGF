@@ -9,11 +9,11 @@ if __name__ == '__main__':
     r            = 301
     dx           = 1/r
     dt           = .0001
-    Omega        = 0.025     # rad/sec
+    Omega        = 0.025    # rad/sec
     finalTime    = 22       # sec
     frameRate    = 50       # Hz
     Scale        = 1        # problem scale
-    Friction     = -1       # rigidBody or levelset friction (not particle's), if not -1, causes segmentation fault:
+    Friction     = .5       # rigidBody or levelset friction (not particle's), if not -1, causes segmentation fault:
     frictionAng  = 40;      # deg
     E            = 353700   # Young's modulus, def: 353700 Pa
     nu           = .3       # Poisson ratio, def: .3
@@ -31,7 +31,7 @@ if __name__ == '__main__':
     gravity                   = (0, oneG, 0),
     particle_gravity          = True,
     rigidBody_gravity         = False,
-    num_threads               = 32, # -1 for max
+    num_threads               = -1, # -1 for max
     rigid_body_collision      = False,
     rigid_body_levelset_collision = False, # apply impulse on rB if its particle's phi<0
     particle_collision        = True,  # update particle pos and vel if its phi<0

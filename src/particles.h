@@ -30,7 +30,7 @@ class MPMParticle : public Unit {
   Matrix dg_e;
   // Affine momemtum (APIC)
   Matrix apic_b;
-  Matrix apic_c; // c567
+  // Matrix apic_c; // c567
   // Vector apic_d; // c8
   Vector boundary_normal;
   real boundary_distance;
@@ -50,7 +50,7 @@ class MPMParticle : public Unit {
                  pos,
                  dg_e,
                  apic_b,
-                 apic_c, // c567
+                 // apic_c, // c567
                  // apic_d, // c8
                  // q_p, // hardening
                  boundary_normal,
@@ -94,7 +94,7 @@ class MPMParticle : public Unit {
     dg_e    = Matrix(1.0f);
     // q_p     = 0.0_f; // hardening
     apic_b  = Matrix(0);
-    apic_c  = Matrix(0); // c567
+    // apic_c  = Matrix(0); // c567
     // apic_d  = Vector(0); // c8
     v_and_m = VectorP(0.0f);
     vol     = 1.0f;
