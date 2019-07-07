@@ -9,7 +9,6 @@
 
 TC_NAMESPACE_BEGIN
 
-// used in water
 inline MatrixND<2, real> dR_from_dF(const MatrixND<2, real> &F,
                                     const MatrixND<2, real> &R,
                                     const MatrixND<2, real> &S,
@@ -567,57 +566,44 @@ inline real diff_interlock_log_over_diff(const real x,
 
 // sand ------------------------------------------------------------------------
 // StvkWithHencky with volume correction
-// St. Venant-Kirchhoff with Hencky
 template <int dim>
 class SandParticle : public MPMParticle<dim> {
  public:
   using Base = MPMParticle<dim>;
   using Vector = typename Base::Vector;
   using Matrix = typename Base::Matrix;
-  real lambda_0       = 204057.0_f;
-  real mu_0           = 136038.0_f;
+
+  real lambda_0 = 204057.0_f, mu_0 = 136038.0_f;
   real friction_angle = 30.0_f;
-  real alpha          = 1.0_f;
-  real cohesion       = 0.0_f;
-  real logJp          = 0.0_f;
-  real beta           = 1.0_f;
-  // hardening
-  bool hardening;
-  // real h0 = 50.0_f;
-  // real h1 = 9.0_f;
-  // real h2 = 0.2_f;
-  // real h3 = 10.0_f;
-  TC_IO_DEF_WITH_BASE(lambda_0, mu_0, friction_angle,
-                      alpha, cohesion, logJp, beta);
+  real alpha = 1.0_f;
+  real cohesion = 0.0_f;
+  real logJp = 0.0_f;
+  real beta = 1.0_f;
+  TC_IO_DEF_WITH_BASE(lambda_0,
+                      mu_0,
+                      friction_angle,
+                      alpha,
+                      cohesion,
+                      logJp,
+                      beta);
+
   SandParticle() : MPMParticle<dim>() {
   }
 
   void initialize(const Config &config) override {
     Base::initialize(config);
     lambda_0 = config.get("lambda_0", lambda_0);
-    mu_0     = config.get("mu_0"    , mu_0);
-
-    // hardening
-    hardening = config.get("Hardening", true);
-    if (hardening){
-      // h0 = config.get("h0", h0);
-      // h1 = config.get("h1", h1);
-      // h2 = config.get("h2", h2);
-      // h3 = config.get("h3", h3);
-    }else{
-      friction_angle = config.get("friction_angle", friction_angle);
-      real sin_phi   = std::sin(friction_angle / 180._f * real(3.141592653));
-      alpha          = std::sqrt(2._f / 3._f) * 2._f * sin_phi / (3._f - sin_phi);
-    }
-
+    mu_0 = config.get("mu_0", mu_0);
+    friction_angle = config.get("friction_angle", 30._f);
+    real sin_phi = std::sin(friction_angle / 180._f * real(3.141592653));
+    alpha = std::sqrt(2._f / 3._f) * 2._f * sin_phi / (3._f - sin_phi);
     cohesion = config.get("cohesion", 0._f);
     logJp = 0._f;
     beta = config.get("beta", 1.0_f);
-    // beta = std::sqrt(1._f / 3._f) * 6._f * cohesion * cos_phi / (3._f - sin_phi);
   }
 
   // project : called from plasticity func -------------------------------------
-  void project(Matrix sigma, real alpha, Matrix &sigma_out, real &delta_q_p) {
+  void project(Matrix sigma, real alpha, Matrix &sigma_out) {
     const real d = dim;
     Vector epsilon_diag;
     for (int i = 0; i < dim; i++) {
@@ -625,101 +611,93 @@ class SandParticle : public MPMParticle<dim> {
           std::log(std::max(std::abs(sigma[i][i]), 1e-4_f)) - cohesion;
     }
     Matrix epsilon(epsilon_diag);
-    real tr              = epsilon.diag().sum() + logJp;
-    Matrix epsilon_hat   = epsilon - (tr) / d * Matrix(1.0_f);
+    real tr = epsilon.diag().sum() + logJp;
+    Matrix epsilon_hat = epsilon - (tr) / d * Matrix(1.0_f);
     real epsilon_hat_for = epsilon_hat.diag().length();
     // case II
     if (tr >= 0.0_f) {
-      sigma_out        = Matrix(std::exp(cohesion));
-
-      // hardening
-      real delta_gamma = epsilon_hat_for+(d*lambda_0+2*mu_0)/(2*mu_0)*tr*alpha;
-      delta_q_p        = delta_gamma;
-      logJp            = beta * epsilon.diag().sum() + logJp;
+      sigma_out = Matrix(std::exp(cohesion));
+      logJp = beta * epsilon.diag().sum() + logJp;
+      this->sCase = 20; // stress case
     } else {
       logJp = 0;
       real delta_gamma =
           epsilon_hat_for + (d * lambda_0 + 2 * mu_0) / (2 * mu_0) * tr * alpha;
       // case I
       if (delta_gamma <= 0) {
-        delta_q_p = 0; // hardening
-        Matrix h  = epsilon + Matrix(cohesion);
+        Matrix h = epsilon + Matrix(cohesion);
         sigma_out = Matrix(h.diag().map(static_cast<real (*)(real)>(std::exp)));
+        this->sCase = 10; // stress case
       // case III
       } else {
-        Matrix h  = epsilon - delta_gamma / epsilon_hat_for * epsilon_hat +
-                    Matrix(cohesion);
-        delta_q_p = h.diag().length(); // hardening
+        Matrix h = epsilon - delta_gamma / epsilon_hat_for * epsilon_hat +
+                   Matrix(cohesion);
         sigma_out = Matrix(h.diag().map(static_cast<real (*)(real)>(std::exp)));
+        this->sCase = 30; // stress case
       }
     }
   }
 
-  // force, called from transfer.cpp -------------------------------------------
   Matrix calculate_force() override {
     Matrix u, v, sig, dg = this->dg_e;
-    // singular value decomposition: defGrad = U * SIG * V'
     svd(this->dg_e, u, sig, v);
-    Matrix log_sig(sig.diag().template map(static_cast<real (*)(real)>(std::log)));
+    Matrix log_sig(
+        sig.diag().template map(static_cast<real (*)(real)>(std::log)));
     Matrix inv_sig(Vector(1.0_f) / sig.diag());
     Matrix center = 2.0_f * mu_0 * inv_sig * log_sig +
                     lambda_0 * (log_sig.diag().sum()) * inv_sig;
-    // gridForce = -Vol * Model * defGradient'; Model = d(Psi)/d(defGradient)
+
+    // added -------------------------------------------------------------------
+    Matrix cS = -determinant(this->dg_e) * (u * center * transpose(v))
+                                         * transpose(dg);
+    this->sm  = (cS[1][1] + cS[2][2] + cS[3][3]) / 3.0f;
+    this->j2s = sqrt( (pow(cS[1][1],(real)2)+
+                       pow(cS[2][2],(real)2)+
+                       pow(cS[3][3],(real)2))/3.0_f -
+                      (cS[1][1]*cS[2][2]+
+                       cS[1][1]*cS[3][3]+
+                       cS[3][3]*cS[2][2])/3.0_f +
+                      (pow(cS[1][2],(real)2)+
+                       pow(cS[2][3],(real)2)+
+                       pow(cS[3][1],(real)2)) );
+
     return -this->vol * (u * center * transpose(v)) * transpose(dg);
   }
 
-  // plasticity, called from transfer.cpp for each particle --------------------
   int plasticity(const Matrix &cdg) override {
-
-    // hardening
-    // if (hardening){
-    //   real phi_cs(0.0_f); // critical state friction angle
-    //   friction_angle      = h0 + (h1*this->q_p - h3) * std::exp(-h2 * this->q_p);
-    //   real dilation_angle = friction_angle - phi_cs;
-    //   real sin_phi        = std::sin(dilation_angle / 180._f * real(3.141592653)); // changed
-    //   alpha               = std::sqrt(2._f / 3._f) * 2._f * sin_phi / (3._f - sin_phi);
-    // }
-
-    // update elastic deformation gradient using C_defGrad
     this->dg_e = cdg * this->dg_e;
-
-    // svd
     Matrix u, v, sig;
     svd(this->dg_e, u, sig, v);
-
-    // project, update sigma (i.e. t or sigma_out)
     Matrix t(1.0_f);
-    real delta_q_p(0.0_f); // hardening
-    project(sig, alpha, t, delta_q_p);
-
-    // update elastic deformation gradient using updated sigma
+    project(sig, alpha, t);
     this->dg_e = u * t * transposed(v);
-
-    // update hardening state
-    // if (hardening){this->q_p += delta_q_p;} // hardening
-
     return 0;
   }
 
- // min allowed dt ----------------------------------------------------- no use!
   real get_allowed_dt(const real &dx) const override {
-    real J = determinant(this->dg_e);
+    real J = determinant(this->dg_e); // J -------------------------------------
     real mass = this->get_mass();
     real vol0 = this->vol;
     real rho0 = mass / vol0;
     real rho = rho0 / J;
+
     real K = 2.0_f * mu_0 / 3.0_f + lambda_0;
     real c2 = 4.0_f * mu_0 / (3.0_f * rho) + K * (1.0_f - std::log(J)) / rho0;
     c2 = max(c2, 1e-20_f);
     real c = sqrt(c2);
-    // real c = sqrt((lambda_0 + 2.0_f * mu_0)/rho);
+
+    //    real c = sqrt((lambda_0 + 2.0_f * mu_0)/rho);
+
     Vector v = this->get_velocity();
     real u = sqrt(v.dot(v));
+
     return dx / (c + u);
   }
+
   Vector3 get_debug_info() const override {
     return Vector3(0, 6, 0);
   }
+
   std::string get_name() const override {
     return "sand";
   }

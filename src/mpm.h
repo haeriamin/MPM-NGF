@@ -64,9 +64,9 @@ class MPM : public Simulation<dim> {
   using typename Base::Matrix;
   using typename Base::MatrixP;
 
-  // Kernel: if dim==2:MPMKernel, if dim==3:MPMFastKernel32
-  using Kernel = std::conditional_t<dim == 2, MPMKernel<dim,mpm_kernel_order>, MPMFastKernel32>;
-
+  using Kernel = std::conditional_t<dim == 2,
+                                    MPMKernel<dim, mpm_kernel_order>,
+                                    MPMFastKernel32>;
   using Index = IndexND<dim>;
   using Region = RegionND<dim>;
   using Particle = MPMParticle<dim>;
@@ -213,7 +213,8 @@ class MPM : public Simulation<dim> {
 
   template <typename T>
   void parallel_for_each_particle(const T &target) {
-    ThreadedTaskManager::run((int)particles.size(), this->num_threads, [&](int i) { target(*allocator[particles[i]]); });
+    ThreadedTaskManager::run((int)particles.size(), this->num_threads,
+                             [&](int i) { target(*allocator[particles[i]]); });
   }
 
  public:
@@ -246,7 +247,9 @@ class MPM : public Simulation<dim> {
 
   virtual void visualize() const override;
   void write_partio(const std::string &file_name) const;
-  void write_rigid_body(RigidBody<dim> const *rigid, const std::string &file_name) const;
+  void write_rigid_body(RigidBody<dim> const *rigid,
+                        const std::string &file_name) const;
+
 //------------------------------------------------------------------------------
   void write_particle(const std::string &file_name) const;
 //------------------------------------------------------------------------------
@@ -325,10 +328,10 @@ class MPM : public Simulation<dim> {
     std::string directory = config_backup.get_string("frame_directory");
     std::string filename;
 //------------------------------------------------------------------------------
-    // if (frame_count%50 == 0 || frame_count == 1) {
-    //   filename = fmt::format("{}/particle_{:04}", directory, frame_count);
-    //   write_particle(filename);
-    // } 
+    if (frame_count%50 == 0 || frame_count == 1) {
+      filename = fmt::format("{}/particle_{:04}", directory, frame_count);
+      write_particle(filename);
+    }
 
     bool Houdini = config_backup.get("Houdini", true);
     if (Houdini){
@@ -426,20 +429,16 @@ class MPM : public Simulation<dim> {
     }
   }
 
-  // parallel for each block with index ----------------------------------------
   template <typename T>
   void parallel_for_each_block_with_index(const T &target,
-                                          bool fat, // false
-                                          bool colored = false) { // true
+                                          bool fat,
+                                          bool colored = false) {
     std::pair<const uint64_t *, unsigned> blocks;
-    // if fat
     if (fat)
       blocks = fat_page_map->Get_Blocks();
-    // if not fat
     else
       blocks = page_map->Get_Blocks();
     auto grid_array = grid->Get_Array();
-    // if not colored
     if (!colored) {
       ThreadedTaskManager::run(
           (int)blocks.second, this->num_threads, [&](int b) {
@@ -447,11 +446,10 @@ class MPM : public Simulation<dim> {
                 &grid_array(blocks.first[b]));
             target(b, blocks.first[b], g);
           });
-    // if colored
     } else {
       for (int i = 0; i < (1 << dim); i++) {
         ThreadedTaskManager::run(
-            (int)blocks.second, this->num_threads, [&](int b) { // second: block_offsets.size()
+            (int)blocks.second, this->num_threads, [&](int b) {
               Vectori v(SparseMask::LinearToCoord(blocks.first[b]));
               GridState<dim> *g = reinterpret_cast<GridState<dim> *>(
                   &grid_array(blocks.first[b]));
@@ -461,7 +459,7 @@ class MPM : public Simulation<dim> {
                   return;
                 }
               }
-              target(b, blocks.first[b], g); // first: block_offsets[0]
+              target(b, blocks.first[b], g);
             });
       }
     }
@@ -477,10 +475,10 @@ class MPM : public Simulation<dim> {
 
   Vectori grid_block_size() const {
     Vectori ret;
-    ret[0] = 1 << SparseMask::block_xbits; // 4 = 1 << block_xbits=2
-    ret[1] = 1 << SparseMask::block_ybits; // 4 = 1 << block_ybits=2
+    ret[0] = 1 << SparseMask::block_xbits;
+    ret[1] = 1 << SparseMask::block_ybits;
     TC_STATIC_IF(dim == 3) {
-      ret[2] = 1 << SparseMask::block_zbits; // 8 = 1 << block_zbits=4
+      ret[2] = 1 << SparseMask::block_zbits;
     }
     TC_STATIC_END_IF
     return ret;

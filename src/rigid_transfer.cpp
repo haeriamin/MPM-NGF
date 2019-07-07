@@ -14,14 +14,11 @@
 
 TC_NAMESPACE_BEGIN
 
-// rasterize rigid boundary (P2G)-----------------------------------------------
 // writes to grid_state, grid_cdf, grid_sdf_last_rigid_particle, rigid_markers
 template <int dim>
 void MPM<dim>::rasterize_rigid_boundary() {
-  // Note: we assume particles from the same rigid body are contiguous (neighbor)
+  // Note: we assume particles from the same rigid body are contiguous
   parallel_for_each_particle([&](Particle &p_) {
-
-    // only for rigid boundary particles
     auto *p = dynamic_cast<RigidBoundaryParticle<dim> *>(&p_);
     if (!p)
       return;
@@ -37,35 +34,31 @@ void MPM<dim>::rasterize_rigid_boundary() {
     for (auto &ind : region) {
       auto i = ind.get_ipos() + grid_base_pos;
       auto grid_pos = i.template cast<real>() * delta_x;
-
-      // distance from rigid mesh element to grid node in particle's kernel
       Vector coord = world_to_elem * (grid_pos - p0);
-
       bool negative = coord[dim - 1] < 0;
-
-      // coord[2], in z-direction?
       real dist_triangle = abs(coord[dim - 1]);
       bool in_range = false;
 
-      // check affinity
       TC_STATIC_IF(dim == 2) {
         if (-0.02 <= coord[0] && coord[0] <= 1.02) {
           in_range = true;
         }
       }
-      // 3d
       TC_STATIC_ELSE {
         if (0 <= coord[0] && 0 <= coord[1] && coord[0] + coord[1] <= 1) {
           in_range = true;
         }
       }
       TC_STATIC_END_IF
+
       if (!in_range) {
         continue;
       }
 
       dist_triangle *= inv_delta_x;
+
       GridState<dim> &g = get_grid(i);
+
       g.get_lock().lock();
       if (g.get_rigid_body_id() == -1 ||
           dist_triangle < get_grid(i).get_distance()) {
@@ -80,11 +73,9 @@ void MPM<dim>::rasterize_rigid_boundary() {
       g.get_lock().unlock();
     }
   });
-
   parallel_for_each_active_grid(
       [&](GridState<dim> &g) { g.set_distance(g.get_distance() * delta_x); });
 
-  // 2d ------------------------------------------------------------------------
   TC_STATIC_IF(dim == 2) {
     ArrayND<2, uint32> grid_states_tmp(id(this->res + Vectori(1)), 0);
     for (int e = 0; e < config_backup.get<int>("cdf_expand", 0); e++) {
@@ -119,12 +110,12 @@ void MPM<dim>::rasterize_rigid_boundary() {
     }
   }
   TC_STATIC_END_IF
-  // 2d end --------------------------------------------------------------------
 }
+
 template void MPM<2>::rasterize_rigid_boundary();
+
 template void MPM<3>::rasterize_rigid_boundary();
 
-// gather cdf (A,T,d) ----------------------------------------------------------
 // Reads grid_state and grid_cdf
 template <int dim>
 void MPM<dim>::gather_cdf() {
@@ -257,8 +248,6 @@ void MPM<dim>::gather_cdf() {
           }
         }
       }
-
-      // calculate near_boundary & boundary_distance ---------------------------
       if (std::abs(determinant(XtX)) > mpm_reconstruction_guard<dim>()) {
         VectorP r = (inversed(XtX) * XtY).template cast<real>();
         p.near_boundary_ = true;
@@ -286,5 +275,7 @@ void MPM<dim>::gather_cdf() {
 
 template void MPM<2>::gather_cdf();
 template void MPM<3>::gather_cdf();
+
 TC_NAMESPACE_END
+
 #endif

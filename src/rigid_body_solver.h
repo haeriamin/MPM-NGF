@@ -17,7 +17,6 @@ TC_NAMESPACE_BEGIN
 
 //#define DEBUG_CCD
 
-// collision -------------------------------------------------------------------
 template <int dim>
 class Collision {
  public:
@@ -73,19 +72,21 @@ class Collision {
 
   void project_position(real dt, real penalty) {
     Vector r0 = p - objects[0]->position, r1 = p - objects[1]->position;
+
     real J;
     J = penalty * dt * depth *
         inversed(objects[0]->get_impulse_contribution(r0, normal) +
                  objects[1]->get_impulse_contribution(r1, normal));
+
     if (J < 0)
       return;
+
     Vector impulse = J * normal;
     objects[0]->apply_impulse(-impulse, p);
     objects[1]->apply_impulse(impulse, p);
   }
 };
 
-// rB solver -------------------------------------------------------------------
 template <int dim>
 class RigidSolver {
   using Vector = VectorND<dim, real>;
@@ -144,6 +145,7 @@ class RigidSolver {
       }
     }
   }
+
  public:
   void detect_rigid_collision(RigidsVector &rigids,
                               CollisionsVector &collisions);
@@ -155,7 +157,6 @@ void RigidSolver<2>::detect_rigid_collision(RigidsVector &rigids,
   TC_NOT_IMPLEMENTED
 }
 
-// detect rigid collision ------------------------------------------------------
 template <>
 void RigidSolver<3>::detect_rigid_collision(RigidsVector &rigids,
                                             CollisionsVector &collisions) {

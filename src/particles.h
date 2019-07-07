@@ -16,10 +16,10 @@ TC_NAMESPACE_BEGIN
 template <int dim>
 class MPMParticle : public Unit {
  public:
-  using Vector  = VectorND<dim, real>;
+  using Vector = VectorND<dim, real>;
   using VectorP = VectorND<dim + 1, real>;
-  using Matrix  = MatrixND<dim, real>;
-  using Region  = RegionND<dim>;
+  using Matrix = MatrixND<dim, real>;
+  using Region = RegionND<dim>;
 
  private:
   VectorP v_and_m;
@@ -30,8 +30,7 @@ class MPMParticle : public Unit {
   Matrix dg_e;
   // Affine momemtum (APIC)
   Matrix apic_b;
-  // Matrix apic_c; // c567
-  // Vector apic_d; // c8
+  Matrix apic_c; // c567
   Vector boundary_normal;
   real boundary_distance;
   real vol;
@@ -44,15 +43,15 @@ class MPMParticle : public Unit {
   uint32 states;
   int32 id;
   real debug;
-  // real q_p; // hardening
+  int sCase; // stress case
+  real sm;   // mean stress
+  real j2s;  // J2 square
 
   TC_IO_DEF_VIRT(v_and_m,
                  pos,
                  dg_e,
                  apic_b,
-                 // apic_c, // c567
-                 // apic_d, // c8
-                 // q_p, // hardening
+                 apic_c, // c567
                  boundary_normal,
                  boundary_distance,
                  vol,
@@ -63,8 +62,10 @@ class MPMParticle : public Unit {
                  near_boundary_,
                  states,
                  id,
-                 is_rigid_);
-
+                 is_rigid_,
+                 sCase, // stress case
+                 sm,    // mean stress
+                 j2s);  // J2 square
 
   TC_FORCE_INLINE bool is_rigid() const {
     return is_rigid_;
@@ -91,22 +92,23 @@ class MPMParticle : public Unit {
   }
 
   MPMParticle() {
-    dg_e    = Matrix(1.0f);
-    // q_p     = 0.0_f; // hardening
-    apic_b  = Matrix(0);
-    // apic_c  = Matrix(0); // c567
-    // apic_d  = Vector(0); // c8
+    dg_e = Matrix(1.0f);
+    apic_b = Matrix(0);
+    apic_c = Matrix(0); // c567
     v_and_m = VectorP(0.0f);
-    vol     = 1.0f;
-    states  = 0;
-    boundary_normal   = Vector(0.0_f);
+    vol = 1.0f;
+    states = 0;
+    boundary_normal = Vector(0.0_f);
     boundary_distance = 0.0_f;
-    dt_limit          = 1;
-    stiffness_limit   = 1;
-    cfl_limit         = 1;
-    near_boundary_    = false;
-    id                = 0;
-    is_rigid_         = false;
+    dt_limit = 1;
+    stiffness_limit = 1;
+    cfl_limit = 1;
+    near_boundary_ = false;
+    id = 0;
+    is_rigid_ = false;
+    sCase = 0;   // stress case
+    sm = 0.0f;   // mean stress
+    j2s = 0.0f;  // J2 square
   }
 
  public:
@@ -201,7 +203,9 @@ class MPMParticle : public Unit {
 
 using MPMParticle2D = MPMParticle<2>;
 using MPMParticle3D = MPMParticle<3>;
+
 TC_INTERFACE(MPMParticle2D);
+
 TC_INTERFACE(MPMParticle3D);
 
 #define TC_REGISTER_MPM_PARTICLE(name)                                \
@@ -212,7 +216,7 @@ TC_INTERFACE(MPMParticle3D);
       "2D MPM particle (" #name ") cannot exceed 192B");              \
   static_assert(                                                      \
       sizeof(name##Particle3D) <= get_particle_size_upper_bound<3>(), \
-      "3D MPM particle (" #name ") cannot exceed 320B");              \
+      "3D MPM particle (" #name ") cannot exceed 256B");              \
   TC_IMPLEMENTATION(MPMParticle2D, name##Particle2D,                  \
                     name##Particle2D().get_name());                   \
   TC_IMPLEMENTATION(MPMParticle3D, name##Particle3D,                  \

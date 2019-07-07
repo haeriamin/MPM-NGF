@@ -288,7 +288,7 @@ void MPM<dim>::advect_rigid_bodies(real dt) {
 
   for (auto &r : rigids) {
     auto &rigid = *r;
-    // rotation axis
+    // rotation axix
     if (rigid.rotation_axis.abs_max() > 0.1_f) {
       rigid.enforce_angular_velocity_parallel_to(rigid.rotation_axis);
     }
@@ -308,10 +308,10 @@ void MPM<dim>::advect_rigid_bodies(real dt) {
     if (config_backup.get("print_rigid_body_state", true)) {
       // TC_P(rigid->get_mass());
       // TC_P(rigid->get_inertia());
-      // TC_P(rigid.position);
+      TC_P(rigid.position);
       // TC_P(rigid.rotation.value);
-      // TC_P(rigid.velocity);
-      // TC_P(rigid.angular_velocity.value);
+      TC_P(rigid.velocity);
+      TC_P(rigid.angular_velocity.value);
     }
   }
   // align particle with rigid body --------------------------------------------

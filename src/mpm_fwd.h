@@ -65,9 +65,9 @@ template <int dim>
 constexpr int get_particle_size_upper_bound() {
   static_assert(dim == 2 || dim == 3, "only 2D and 3D supported");
   if (dim == 2) {
-    return 192; // was 192 ---------------------------------------------------
+    return 192;
   } else {
-    return 512; // was 320 ---------------------------------------------------
+    return 640; // was 320 -----------------------------------------------------
   }
 }
 

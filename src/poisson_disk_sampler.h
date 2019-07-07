@@ -66,7 +66,7 @@ class PoissonDiskSampler {
     }
     if (specific_min_distance > 0)
       min_distance = specific_min_distance;
-
+      
 ////////////////////////////////////////////////////////////////////////////////
     std::cout<<" densityTexture="<<density_texture;
     std::cout<<", dx="<<dx;
@@ -107,7 +107,6 @@ class PoissonDiskSampler {
       return false;
     real min_distance_2 = min_distance * min_distance;
 
-    // compare with 5 particles around
     Vectori local_min_index = index - Vectori(2);
     Vectori local_max_index = index + Vectori(3);
 
@@ -116,7 +115,6 @@ class PoissonDiskSampler {
       Index ind = ind_;
       Vectori delta(0);
       Vector offset(0);
-      // non-periodic
       if (!periodic) {
         bool outside_grid = false;
         for (int d = 0; d < dim; ++d) {
@@ -127,7 +125,6 @@ class PoissonDiskSampler {
         if (outside_grid)
           continue;
       } else {
-      // periodic
         for (int d = 0; d < dim; ++d) {
           if (ind[d] < 0) {
             delta[d] += background_grid.get_res()[d];
@@ -161,7 +158,7 @@ class PoissonDiskSampler {
     std::ifstream is(full_fn, std::ifstream::in | std::ifstream::binary);
     is.read((char *)(&points_size), sizeof(size_t));
 ////////////////////////////////////////////////////////////////////////////////
-    //std::cout<<"noOfParticles="<<points_size*dim;
+    std::cout<<"noOfParticles="<<points_size;
 ////////////////////////////////////////////////////////////////////////////////
     points_list.resize(points_size * dim);
     is.read((char *)(&points_list[0]), sizeof(float) * points_size * dim);

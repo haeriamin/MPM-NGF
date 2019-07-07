@@ -308,7 +308,6 @@ class StepperArticulation : public Articulation<dim> {
     // 2d
     TC_STATIC_IF(dim == 2) {
       TC_NOT_IMPLEMENTED;
-      // angular momentum? 
       torque = (id(angular_velocity) - id(current_vel)) *
                (this->obj[0]->inertia + this->obj[1]->inertia);
     }

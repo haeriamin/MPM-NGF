@@ -3,7 +3,10 @@ import taichi as tc
 r = 320
 
 if __name__ == '__main__':
-  mpm = tc.dynamics.MPM(res=(r + 1, r + 1, r + 1))
+  mpm = tc.dynamics.MPM(
+  res=(r + 1, r + 1, r + 1),
+  gravity= (0, -9.81, 0)
+  )
 
   levelset = mpm.create_levelset()
   levelset.add_sphere(tc.Vector(0.5, 0.55, 0.5), 0.3, True)

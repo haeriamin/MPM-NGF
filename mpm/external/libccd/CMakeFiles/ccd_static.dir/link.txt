@@ -1,0 +1,2 @@
+/usr/bin/ar qc libccd.a  CMakeFiles/ccd_static.dir/src/ccd.c.o CMakeFiles/ccd_static.dir/src/mpr.c.o CMakeFiles/ccd_static.dir/src/polytope.c.o CMakeFiles/ccd_static.dir/src/support.c.o CMakeFiles/ccd_static.dir/src/vec3.c.o
+/usr/bin/ranlib libccd.a

@@ -27,13 +27,11 @@ public:
     };
 
     enum {
-        // data_bits = log2_struct = 5
-        data_bits   = log2_struct,                      // Bits needed for indexing individual bytes within type T
-        // log2_page = page_bits = 12   =>   block_bits = 7
-        block_bits  = page_bits - data_bits,            // Bits needed for indexing data elements within a block
-        block_zbits = block_bits/3 + (block_bits%3>0),  // Bits needed for the z-coordinate of a data elements within a block
-        block_ybits = block_bits/3 + (block_bits%3>1),  // Bits needed for the y-coordinate of a data elements within a block
-        block_xbits = block_bits/3                      // Bits needed for the x-coordinate of a data elements within a block
+        data_bits=log2_struct,                     // Bits needed for indexing individual bytes within type T
+        block_bits=page_bits-data_bits,            // Bits needed for indexing data elements within a block
+        block_zbits=block_bits/3+(block_bits%3>0), // Bits needed for the z-coordinate of a data elements within a block
+        block_ybits=block_bits/3+(block_bits%3>1), // Bits needed for the y-coordinate of a data elements within a block
+        block_xbits=block_bits/3                   // Bits needed for the x-coordinate of a data elements within a block
     };
 
     enum : uint64_t { // Bit masks for the upper 52 bits of memory addresses (page indices)
@@ -47,7 +45,6 @@ public:
         // page_xmask=(0x4924924924924924UL<<(3-block_bits%3))&0xfffffffffffff000UL
     };
 public:
-    // elements_per_block = 128 = 1u<<7
     enum : uint32_t {elements_per_block=1u<<block_bits};
 };
 
@@ -67,21 +64,21 @@ public:
     using T_Mask_base::elements_per_block;
 
 private:
-    using T_Mask_base::page_xmask;using T_Mask_base::page_ymask;using T_Mask_base::page_zmask;
+    using T_Mask_base::page_xmask;using T_Mask_base::page_ymask;using T_Mask_base::page_zmask;    
     enum { // Bit masks for the lower 12 bits of memory addresses (element indices within a page)
         element_zmask=((1<<block_zbits)-1)<<log2_field,                              // Likely ok! (after !=4KB generalization)
         element_ymask=((1<<block_ybits)-1)<<(log2_field+block_zbits),                // Likely ok! (after !=4KB generalization)
         element_xmask=((1<<block_xbits)-1)<<(log2_field+block_zbits+block_ybits)     // Likely ok! (after !=4KB generalization)
     };
-
+    
 public:
-
+    
     enum { // This needs to be carefully re-checked
         // Same as the corresponding element bit masks, but with the most significant bit the respective coordinate zeroed out
         element_z_lsbits=(element_zmask>>1)&element_zmask,
         element_y_lsbits=(element_ymask>>1)&element_ymask,
         element_x_lsbits=(element_xmask>>1)&element_xmask,
-
+        
         // Same as the corresponding element bit masks, but with the least significant bit the respective coordinate zeroed out
         element_z_msbits=(element_zmask<<1)&element_zmask,
         element_y_msbits=(element_ymask<<1)&element_ymask,
@@ -91,10 +88,10 @@ public:
         element_z_msbit=element_zmask^element_z_lsbits,
         element_y_msbit=element_ymask^element_y_lsbits,
         element_x_msbit=element_xmask^element_x_lsbits,
-
+        
         downsample_lower_mask = element_z_lsbits | element_y_lsbits | element_x_lsbits,
         upsample_lower_mask   = element_z_msbits | element_y_msbits | element_x_msbits,
-
+        
         // "Left over bits" - lob=0 means page address starts with z-bit, lob=1 is x-bit, lob=2 is y-bit
         lob = (3 - block_bits%3)%3,
 
@@ -111,16 +108,16 @@ public:
         bit_log2_page_plus_2_mask = lob==0 ? element_x_msbit : ( lob==1 ? element_y_msbit : element_z_msbit )
 
     };
-
+    
     enum { // Bit masks for aggregate addresses
-        zmask = page_zmask | (uint64_t)element_zmask,
-        ymask = page_ymask | (uint64_t)element_ymask,
-        xmask = page_xmask | (uint64_t)element_xmask
+        zmask=page_zmask|(uint64_t)element_zmask,
+        ymask=page_ymask|(uint64_t)element_ymask,
+        xmask=page_xmask|(uint64_t)element_xmask
     };
-    enum {
-        MXADD_Zmask=~zmask,
-        MXADD_Ymask=~ymask,
-        MXADD_Xmask=~xmask,
+    enum { 
+        MXADD_Zmask=~zmask, 
+        MXADD_Ymask=~ymask, 
+        MXADD_Xmask=~xmask, 
         MXADD_Wmask=xmask|ymask|zmask
     };
     enum {
@@ -173,7 +170,6 @@ public:
         *j = Bit_Pack(linear_offset,ymask);
         *k = Bit_Pack(linear_offset,zmask);
     }
-    // LinearToCoord -----------------------------------------------------------
     inline static std::array<int,3> LinearToCoord(uint64_t linear_offset)
     {
         std::array<int,3> coord;
@@ -208,7 +204,7 @@ public:
         uint64_t result = upper | lower | my_array[(linear_offset>>log2_page) & 0x7UL];
         return result;
     }
-
+    
     // 1-based offset calculation
     template<int origin=1>
     inline static uint64_t UpsampleOffset(uint64_t linear_offset)
@@ -249,7 +245,7 @@ public:
         uint64_t result=x_result | y_result | z_result | w_result;
         return result;
     }
-
+    
     template<int di, int dj, int dk>
     inline static uint64_t Packed_Offset(const uint64_t pI)
     {
@@ -258,7 +254,7 @@ public:
         uint64_t x_result=( (pI | MXADD_Xmask) + (pJ & ~MXADD_Xmask) ) & ~MXADD_Xmask;
         uint64_t y_result=( (pI | MXADD_Ymask) + (pJ & ~MXADD_Ymask) ) & ~MXADD_Ymask;
         uint64_t z_result=( (pI | MXADD_Zmask) + (pJ & ~MXADD_Zmask) ) & ~MXADD_Zmask;
-
+        
         uint64_t result=x_result | y_result | z_result;
         return result;
     }
@@ -270,7 +266,7 @@ public:
 
         uint64_t x_result=( (pI | MXADD_Xmask) + (pJ & ~MXADD_Xmask) ) & ~MXADD_Xmask;
         uint64_t not_x_result= pI & MXADD_Xmask;
-
+        
         uint64_t result=x_result | not_x_result;
         return result;
     }
@@ -282,11 +278,11 @@ public:
 
         uint64_t y_result=( (pI | MXADD_Ymask) + (pJ & ~MXADD_Ymask) ) & ~MXADD_Ymask;
         uint64_t not_y_result= pI & MXADD_Ymask;
-
+        
         uint64_t result=y_result | not_y_result;
         return result;
     }
-
+    
     template<int dk>
     inline static uint64_t Packed_OffsetZdim(const uint64_t pI)
     {
@@ -294,7 +290,7 @@ public:
 
         uint64_t z_result=( (pI | MXADD_Zmask) + (pJ & ~MXADD_Zmask) ) & ~MXADD_Zmask;
         uint64_t not_z_result= pI & MXADD_Zmask;
-
+        
         uint64_t result=z_result | not_z_result;
         return result;
     }
@@ -321,10 +317,10 @@ protected:
         page_ymask=(0x5555555555555555UL<<(2-block_bits%2))&0xfffffffffffff000UL,
         page_xmask=(0xaaaaaaaaaaaaaaaaUL<<(2-block_bits%2))&0xfffffffffffff000UL
     };
-
+    
 public:
 
-    enum : uint32_t {elements_per_block=1u<<block_bits};
+    enum : uint32_t {elements_per_block=1u<<block_bits};    
 };
 
 //#####################################################################
@@ -346,12 +342,12 @@ public:
         element_ymask=((1<<block_ybits)-1)<<log2_field,
         element_xmask=((1<<block_xbits)-1)<<(log2_field+block_ybits)
     };
-
-    enum {
+    
+    enum { 
         // Same as the corresponding element bit masks, but with the most significant bit the respective coordinate zeroed out
         element_y_lsbits=(element_ymask>>1)&element_ymask,
         element_x_lsbits=(element_xmask>>1)&element_xmask,
-
+        
         // Same as the corresponding element bit masks, but with the least significant bit the respective coordinate zeroed out
         element_y_msbits=(element_ymask<<1)&element_ymask,
         element_x_msbits=(element_xmask<<1)&element_xmask,
@@ -359,18 +355,18 @@ public:
         // Just the most significant bit of the element bit mask for the respective coordinate
         element_y_msbit=element_ymask^element_y_lsbits,
         element_x_msbit=element_xmask^element_x_lsbits,
-
+        
         downsample_lower_mask =  element_y_lsbits | element_x_lsbits,
         upsample_lower_mask   =  element_y_msbits | element_x_msbits,
 
         lob = block_bits%2,
-
+        
         xloc = lob==0 ? 13 : 12,
         yloc = lob==0 ? 12 : 13,
 
         u_ybit_shift = yloc - (log2_field+block_ybits-1),
         u_xbit_shift = xloc - (log2_field+block_bits-1),
-
+        
         bit12_mask = lob==0 ? element_y_msbit : element_x_msbit,
         bit13_mask = lob==0 ? element_x_msbit : element_y_msbit,
     };
@@ -380,9 +376,9 @@ public:
         ymask=page_ymask|(uint64_t)element_ymask,
         xmask=page_xmask|(uint64_t)element_xmask
     };
-    enum {
-        MXADD_Ymask=~ymask,
-        MXADD_Xmask=~xmask,
+    enum { 
+        MXADD_Ymask=~ymask, 
+        MXADD_Xmask=~xmask, 
         MXADD_Wmask=xmask|ymask
     };
     enum {
@@ -410,7 +406,7 @@ public:
         return Bit_Spread<xmask>(i)|Bit_Spread<ymask>(j);
 #endif
     }
-
+    
     inline static uint64_t Linear_Offset(const std::array<int,2>& coord)
     {
 #ifdef HASWELL
@@ -461,7 +457,7 @@ public:
         uint64_t result = upper | lower | my_array[linear_offset>>12 & 0x3UL];
         return result;
     }
-
+    
     // 1-based offset calculation
     inline static uint64_t UpsampleOffset(uint64_t linear_offset)
     {
@@ -498,7 +494,7 @@ public:
         uint64_t result=x_result | y_result | w_result;
         return result;
     }
-
+    
     template<int di, int dj>
     inline static uint64_t Packed_Offset(const uint64_t pI)
     {
@@ -506,7 +502,7 @@ public:
 
         uint64_t x_result=( (pI | MXADD_Xmask) + (pJ & ~MXADD_Xmask) ) & ~MXADD_Xmask;
         uint64_t y_result=( (pI | MXADD_Ymask) + (pJ & ~MXADD_Ymask) ) & ~MXADD_Ymask;
-
+        
         uint64_t result=x_result | y_result;
         return result;
     }
@@ -518,7 +514,7 @@ public:
 
         uint64_t x_result=( (pI | MXADD_Xmask) + (pJ & ~MXADD_Xmask) ) & ~MXADD_Xmask;
         uint64_t not_x_result= pI & MXADD_Xmask;
-
+        
         uint64_t result=x_result | not_x_result;
         return result;
     }
@@ -530,7 +526,7 @@ public:
 
         uint64_t y_result=( (pI | MXADD_Ymask) + (pJ & ~MXADD_Ymask) ) & ~MXADD_Ymask;
         uint64_t not_y_result= pI & MXADD_Ymask;
-
+        
         uint64_t result=y_result | not_y_result;
         return result;
     }

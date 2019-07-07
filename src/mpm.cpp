@@ -65,10 +65,10 @@ void MPM<dim>::initialize(const Config &config) {
     grid = std::make_unique<SparseGrid>(spgrid_size, spgrid_size, spgrid_size);
   }
   TC_STATIC_END_IF
-  page_map       = std::make_unique<SPGrid_Page_Map<log2_size>>(*grid);
+  page_map = std::make_unique<SPGrid_Page_Map<log2_size>>(*grid);
   rigid_page_map = std::make_unique<SPGrid_Page_Map<log2_size>>(*grid);
-  fat_page_map   = std::make_unique<SPGrid_Page_Map<log2_size>>(*grid);
-  grid_region    = Region(Vectori(0), res + VectorI(1), Vector(0)); // start, end, offset
+  fat_page_map = std::make_unique<SPGrid_Page_Map<log2_size>>(*grid);
+  grid_region = Region(Vectori(0), res + VectorI(1), Vector(0)); // start, end, offset
 
   /*
   // Restart?

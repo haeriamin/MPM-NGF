@@ -12,7 +12,6 @@
 
 TC_NAMESPACE_BEGIN
 
-// rigid boundary particle -----------------------------------------------------
 template <int dim>
 class RigidBoundaryParticle : public MPMParticle<dim> {
  public:

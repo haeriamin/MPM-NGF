@@ -34,7 +34,7 @@ public:
         page_map = static_cast<uint64_t*>(Raw_Allocate(map_size*sizeof(uint64_t)));
         dirty = false;
     }
-
+    
     ~SPGrid_Page_Map()
     {
         Raw_Deallocate(page_map,map_size*sizeof(uint64_t));
@@ -70,7 +70,6 @@ public:
         if(!dirty) dirty = true; // Important to avoid unnecessary write sharing
     }
 
-    // Test_Page
     bool Test_Page(const uint64_t offset) const
     {
         uint64_t mask = 1UL << (offset>>log2_page & 0x3f);
@@ -78,7 +77,6 @@ public:
         return entry&mask;
     }
 
-    // Get_Blocks
     std::pair<const uint64_t*,unsigned> Get_Blocks() const
     {
         if(block_offsets.size())
@@ -99,9 +97,9 @@ public:
     std::vector<uint64_t> Generate_Block_Offsets()
     {
         std::vector<uint64_t> block_offsets;
-        for(uint64_t entry=0; entry<map_size; entry++)
+        for(uint64_t entry=0;entry<map_size;entry++)
             if(page_map[entry])
-                for(uint64_t pos=0; pos<64; pos++)
+                for(uint64_t pos=0;pos<64;pos++)
                     if(page_map[entry]&(1UL<<pos))
                         block_offsets.push_back((entry<<(log2_page+6))|(pos<<log2_page));
         return block_offsets;

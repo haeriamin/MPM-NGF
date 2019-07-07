@@ -4,26 +4,29 @@
 *******************************************************************************/
 
 #pragma once
+
 #include <taichi/math/math.h>
+
 TC_NAMESPACE_BEGIN
+
 //#define MPM_TRANSFER_OPT
 
-// Base MPM Kernel -------------------------------------------------------------
 template <int dim, int order_>
 struct MPMKernelBase {
-  constexpr static int D           = dim;
-  constexpr static int order       = order_; // 2
-  constexpr static int kernel_size = order + 1; // 3
-  using Vector  = VectorND<dim, real>;
+  constexpr static int D = dim;
+  constexpr static int order = order_;
+  constexpr static int kernel_size = order + 1;
+
+  using Vector = VectorND<dim, real>;
   using VectorP = VectorND<dim + 1, real>;
   using VectorI = VectorND<dim, int>;
+
   VectorP w_stages[D][kernel_size];
   Vector4 w_cache[D];
   Vector4 dw_cache[D];
   VectorP kernels;
   real inv_delta_x;
 
-  // w_stages ------------------------------------------------------------------
   TC_FORCE_INLINE void shuffle() {
     for (int k = 0; k < kernel_size; k++) {
       for (int j = 0; j < D; j++) {
@@ -45,6 +48,7 @@ struct MPMKernelBase {
     }
     return ret;
   }
+
   TC_FORCE_INLINE Vector get_dw(const VectorI &k) const {
     VectorP ret = w_stages[0][k[0]];
     for (int i = 1; i < dim; i++) {
@@ -52,6 +56,7 @@ struct MPMKernelBase {
     }
     return Vector(ret);
   }
+
   TC_FORCE_INLINE real get_w(const VectorI &k) const {
     VectorP ret = w_stages[0][k[0]];
     for (int i = 1; i < dim; i++) {
@@ -59,26 +64,31 @@ struct MPMKernelBase {
     }
     return ret[D];
   }
+
   static TC_FORCE_INLINE constexpr real inv_D() {
     return 6.0f - real(order);
   }
 };
+
 template <int dim, int order>
 struct MPMKernel;
 
-// Linear kernel ---------------------------------------------------------------
+// Linear kernel
 template <int dim>
 struct MPMKernel<dim, 1> : public MPMKernelBase<dim, 1> {
   using Base = MPMKernelBase<dim, 1>;
   using Vector = typename Base::Vector;
+
   TC_FORCE_INLINE MPMKernel(const Vector &pos, real inv_delta_x) {
     calculate_kernel(pos);
     this->inv_delta_x = inv_delta_x;
     this->shuffle();
   }
+
   TC_FORCE_INLINE static constexpr int get_stencil_start(real x) {
     return int(x);
   }
+
   TC_FORCE_INLINE void calculate_kernel(const Vector &pos) {
     Vector p_fract = fract(pos);
     for (int k = 0; k < dim; k++) {
@@ -89,7 +99,7 @@ struct MPMKernel<dim, 1> : public MPMKernelBase<dim, 1> {
   }
 };
 
-// Quadratic kernel ------------------------------------------------------------
+// Quadratic kernel
 template <int dim>
 struct MPMKernel<dim, 2> : public MPMKernelBase<dim, 2> {
   using Base = MPMKernelBase<dim, 2>;
@@ -105,9 +115,11 @@ struct MPMKernel<dim, 2> : public MPMKernelBase<dim, 2> {
     if (do_shuffle)
       this->shuffle();
   }
+
   TC_FORCE_INLINE static int get_stencil_start(real x) {
     return int(x - 0.5f);
   }
+
   TC_FORCE_INLINE void calculate_kernel(const Vector &pos) {
     Vector p_fract = fract(pos - Vector(0.5f));
     for (int k = 0; k < dim; k++) {
@@ -122,7 +134,7 @@ struct MPMKernel<dim, 2> : public MPMKernelBase<dim, 2> {
   }
 };
 
-// Cubic kernel ----------------------------------------------------------------
+// Cubic kernel
 template <int dim>
 struct MPMKernel<dim, 3> : public MPMKernelBase<dim, 3> {
   using Base = MPMKernelBase<dim, 3>;
@@ -133,9 +145,11 @@ struct MPMKernel<dim, 3> : public MPMKernelBase<dim, 3> {
     this->inv_delta_x = inv_delta_x;
     this->shuffle();
   }
+
   TC_FORCE_INLINE static constexpr int get_stencil_start(real x) {
     return int(x) - 1;
   }
+
   TC_FORCE_INLINE void calculate_kernel(const Vector &pos) {
     Vector p_fract = fract(pos);
     for (int k = 0; k < dim; k++) {
@@ -151,54 +165,48 @@ struct MPMKernel<dim, 3> : public MPMKernelBase<dim, 3> {
   }
 };
 
-// 3D quadratic MPMFastKernel32 ------------------------------------------- used
 struct MPMFastKernel32 : public MPMKernelBase<3, 2> {
   static constexpr int dim = 3;
   using Base = MPMKernelBase<dim, 2>;
   using Vector = typename Base::Vector;
   TC_ALIGNED(64) VectorP kernels[3][3][3];
-  // constructor
-  TC_FORCE_INLINE MPMFastKernel32(const Vector &pos, real inv_delta_x) {
 
-    // call to create quadratic B-spline basis functions
+  TC_FORCE_INLINE MPMFastKernel32(const Vector &pos, real inv_delta_x) {
     calculate_kernel(pos);
     this->inv_delta_x = inv_delta_x;
-
-    // call to calculate 'w_stages'
     this->shuffle();
-
-    // kernels
     VectorP ret(1);
     for (int i = 0; i < 3; i++) {
       VectorP ret1 = ret * w_stages[0][i];
       for (int j = 0; j < 3; j++) {
         VectorP ret2 = ret1 * w_stages[1][j];
         for (int k = 0; k < 3; k++) {
-          kernels[i][j][k] = ret2 * w_stages[2][k]; // w_cache[0]*w_cache[1]*w_cache[2]
+          kernels[i][j][k] = ret2 * w_stages[2][k];
         }
       }
     }
   }
+
   TC_FORCE_INLINE VectorP get_dw_w(const Vector3i &i) {
     return kernels[i.x][i.y][i.z];
   }
+
   TC_FORCE_INLINE static int get_stencil_start(real x) {
     return int(x - 0.5f);
   }
+
   TC_FORCE_INLINE void calculate_kernel(const Vector &pos) {
     Vector p_fract = fract(pos - Vector(0.5f));
     for (int k = 0; k < dim; k++) {
       const Vector4 t = Vector4(p_fract[k]) - Vector4(-0.5f, 0.5f, 1.5f, 0.0f);
       auto tt = t * t;
-      // quadratic B-spline basis functions ------------------------------------
-      this->w_cache[k] = Vector4(0.5f,   -1.0f, 0.5f,   0.0f) * tt + // 2nd order
-                         Vector4(-1.5f,  0.0f,  1.5f,   0.0f) * t +  // 1st order
-                         Vector4(1.125f, 0.75f, 1.125f, 0.0f);       // 0   order
-      // derivative of w
+      this->w_cache[k] = Vector4(0.5f, -1.0f, 0.5f, 0.0f) * tt +
+                         Vector4(-1.5f, 0.0f, 1.5f, 0.0f) * t +
+                         Vector4(1.125f, 0.75f, 1.125f, 0.0f);
       this->dw_cache[k] =
-          Vector4(1.0f,  -2.0f, 1.0f, 0.0f) * t +                    // 1st order
-          Vector4(-1.5f, 0,     1.5f, 0.0f);                         // 0   order
+          Vector4(1.0f, -2.0f, 1.0f, 0.0f) * t + Vector4(-1.5f, 0, 1.5f, 0.0f);
     }
   }
 };
+
 TC_NAMESPACE_END

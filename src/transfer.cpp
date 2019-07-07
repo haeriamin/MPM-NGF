@@ -46,22 +46,29 @@ TC_FORCE_INLINE __m128 broadcast(const __m128 &s, int i) {
 */
 #define broadcast(s, i) _mm_shuffle_ps((s), (s), 0x55 * (i))
 
-// GridCache -------------------------------------------------------------------
+// grid cache ------------------------------------------------------------------
 template <typename MPM, bool v_and_m_only = false>
 struct GridCache {
   static_assert(mpm_kernel_order == 2, "Only supports quadratic kernel");
 
   using SparseMask = typename MPM::SparseMask;
+
   static constexpr int dim = 3;
   static constexpr int scratch_x_size = (1 << SparseMask::block_xbits) + 2;
   static constexpr int scratch_y_size = (1 << SparseMask::block_ybits) + 2;
   static constexpr int scratch_z_size = (1 << SparseMask::block_zbits) + 2;
-  static constexpr int scratch_size   = scratch_x_size * scratch_y_size * scratch_z_size;
+  static constexpr int scratch_size =
+      scratch_x_size * scratch_y_size * scratch_z_size;
 
   static constexpr int num_nodes = pow<dim>(mpm_kernel_order + 1);
-  using ElementType = std::conditional_t<v_and_m_only, Vector4f, GridState<dim>>;
-  using GridCacheType = ElementType[scratch_x_size][scratch_y_size][scratch_z_size];
+
+  using ElementType =
+      std::conditional_t<v_and_m_only, Vector4f, GridState<dim>>;
+
+  using GridCacheType =
+      ElementType[scratch_x_size][scratch_y_size][scratch_z_size];
   using GridCacheLinearizedType = ElementType[scratch_size];
+
   using SparseGrid = typename MPM::SparseGrid;
 
   SparseGrid &grid;
@@ -69,14 +76,17 @@ struct GridCache {
   bool write_back;
 
   TC_ALIGNED(64) GridCacheType blocked;
-  GridCacheLinearizedType &linear = *reinterpret_cast<GridCacheLinearizedType *>(&blocked[0][0][0]);
+  GridCacheLinearizedType &linear =
+      *reinterpret_cast<GridCacheLinearizedType *>(&blocked[0][0][0]);
 
   static constexpr int kernel_linearized(int x) {
-    return ((x / 9) * scratch_y_size * scratch_z_size + (x / 3 % 3) * scratch_z_size + x % 3);
+    return ((x / 9) * scratch_y_size * scratch_z_size +
+            (x / 3 % 3) * scratch_z_size + x % 3);
   }
 
-  // constructor
-  TC_FORCE_INLINE GridCache(SparseGrid &grid, const uint64 &block_offset, bool write_back)
+  TC_FORCE_INLINE GridCache(SparseGrid &grid,
+                            const uint64 &block_offset,
+                            bool write_back)
       : grid(grid), block_offset(block_offset), write_back(write_back) {
     Vector3i block_base_coord(MPM::SparseMask::LinearToCoord(block_offset));
     auto grid_array = grid.Get_Array();
@@ -84,10 +94,13 @@ struct GridCache {
       for (int j = 0; j < scratch_y_size; j++) {
         for (int k = 0; k < scratch_z_size; k++) {
           TC_STATIC_IF(v_and_m_only) {
-            id(blocked[i][j][k]) = grid_array(to_std_array(block_base_coord + Vector3i(i, j, k))).velocity_and_mass;
+            id(blocked[i][j][k]) =
+                grid_array(to_std_array(block_base_coord + Vector3i(i, j, k)))
+                    .velocity_and_mass;
           }
           TC_STATIC_ELSE {
-            id(blocked[i][j][k]) = grid_array(to_std_array(block_base_coord + Vector3i(i, j, k)));
+            id(blocked[i][j][k]) =
+                grid_array(to_std_array(block_base_coord + Vector3i(i, j, k)));
           }
           TC_STATIC_END_IF
         }
@@ -95,7 +108,6 @@ struct GridCache {
     }
   }
 
-  // destructor
   ~GridCache() {
     if (!write_back) {
       return;
@@ -106,10 +118,12 @@ struct GridCache {
       for (int j = 0; j < scratch_y_size; j++) {
         for (int k = 0; k < scratch_z_size; k++) {
           TC_STATIC_IF(v_and_m_only) {
-            id(grid_array(to_std_array(block_base_coord + Vector3i(i, j, k))).velocity_and_mass) = blocked[i][j][k];
+            id(grid_array(to_std_array(block_base_coord + Vector3i(i, j, k)))
+                .velocity_and_mass) = blocked[i][j][k];
           }
           TC_STATIC_ELSE {
-            id(grid_array(to_std_array(block_base_coord + Vector3i(i, j, k)))) = blocked[i][j][k];
+            id(grid_array(to_std_array(block_base_coord + Vector3i(i, j, k)))) =
+                blocked[i][j][k];
           }
           TC_STATIC_END_IF
         }
@@ -121,50 +135,51 @@ struct GridCache {
     return x * scratch_y_size * scratch_z_size + y * scratch_z_size + z;
   }
 
-  // spgrid_block_linear_to_vector ---------------------------------------------
   TC_FORCE_INLINE static Vector3i spgrid_block_linear_to_vector(int elem) {
-    int elem_x = (elem >> (SparseMask::block_zbits + SparseMask::block_ybits)); // elem >> 4+2  :  0 or 1
-    int elem_y = ((elem >> SparseMask::block_zbits) & ((1 << SparseMask::block_ybits) - 1)); // elem>>4 & ((1<<2)-1)  :  0 to 3
-    int elem_z = elem & ((1 << SparseMask::block_zbits) - 1); // elem & ((1<<4)-1) = elem   :    0 to 15
+    int elem_x = (elem >> (SparseMask::block_zbits + SparseMask::block_ybits));
+    int elem_y = ((elem >> SparseMask::block_zbits) &
+                  ((1 << SparseMask::block_ybits) - 1));
+    int elem_z = elem & ((1 << SparseMask::block_zbits) - 1);
     return Vector3i(elem_x, elem_y, elem_z);
   }
 
-  TC_FORCE_INLINE static constexpr int spgrid_block_to_grid_cache_block(int elem) {
+  TC_FORCE_INLINE static constexpr int spgrid_block_to_grid_cache_block(
+      int elem) {
     int elem_x = (elem >> (SparseMask::block_zbits + SparseMask::block_ybits));
-    int elem_y = ((elem >> SparseMask::block_zbits) & ((1 << SparseMask::block_ybits) - 1));
+    int elem_y = ((elem >> SparseMask::block_zbits) &
+                  ((1 << SparseMask::block_ybits) - 1));
     int elem_z = elem & ((1 << SparseMask::block_zbits) - 1);
     return linearized_offset(elem_x, elem_y, elem_z);
   }
 };
 
-// make_float4 -----------------------------------------------------------------
 TC_FORCE_INLINE __m128 make_float4(float32 a, float32 b, float32 c, float32 d) {
   return _mm_set_ps(d, c, b, a);
 }
 
-// MLS-MPM fast kernel ---------------------------------------------------- : ON
+// MLS-MPM fast kernel ---------------------------------------------------------
 struct MLSMPMFastKernel32 {
   static constexpr int dim = 3;
   using Base = MPMKernelBase<dim, 2>;
   using Vector = typename Base::Vector;
   TC_ALIGNED(64) __m128 kernels[3][3];
-  // constructor ---------------------------------------------------------------
+
   TC_FORCE_INLINE MLSMPMFastKernel32(const __m128 &pos, real inv_delta_x) {
     __m128 p_fract = _mm_sub_ps(pos, _mm_set1_ps(0.5f));
     TC_ALIGNED(64) __m128 w_cache[dim];
     for (int k = 0; k < dim; k++) {
-      __m128 t  = _mm_sub_ps(_mm_set1_ps(p_fract[k]), make_float4(-0.5f, 0.5f, 1.5f, 0.0f));
+      __m128 t = _mm_sub_ps(_mm_set1_ps(p_fract[k]),
+                            make_float4(-0.5f, 0.5f, 1.5f, 0.0f));
       __m128 tt = _mm_mul_ps(t, t);
-      // quadratic B-spline ----------------------------------------------------
       w_cache[k] =
-          _mm_fmadd_ps(make_float4(0.5f,   -1.0f, 0.5f,   0.0f), tt, // 2nd order
-          _mm_fmadd_ps(make_float4(-1.5f,  0.0f,  1.5f,   0.0f), t,  // 1st order
-                       make_float4(1.125f, 0.75f, 1.125f, 0.0f)));   // 0   order
+          _mm_fmadd_ps(make_float4(0.5f, -1.0f, 0.5f, 0.0f), tt,
+                       _mm_fmadd_ps(make_float4(-1.5f, 0.0f, 1.5f, 0.0f), t,
+                                    make_float4(1.125f, 0.75f, 1.125f, 0.0f)));
     }
-    // kernels
     for (int i = 0; i < 3; i++) {
       for (int j = 0; j < 3; j++) {
-        kernels[i][j] = _mm_mul_ps(_mm_set1_ps(w_cache[0][i] * w_cache[1][j]), w_cache[2]);
+        kernels[i][j] =
+            _mm_mul_ps(_mm_set1_ps(w_cache[0][i] * w_cache[1][j]), w_cache[2]);
       }
     }
   }
@@ -358,11 +373,12 @@ void MPM<3>::rasterize_optimized(real delta_t) {
     int particle_end = block_meta[b].particle_offset;
 
     for (uint32 t = 0; t < SparseMask::elements_per_block; t++) {
-      particle_begin        = particle_end;
-      particle_end         += g_[t].particle_count;
+      particle_begin = particle_end;
+      particle_end += g_[t].particle_count;
       int grid_cache_offset = grid_cache.spgrid_block_to_grid_cache_block(t);
 
-      Vectori grid_base_pos  = Vectori(SparseMask::LinearToCoord(block_offset)) + grid_cache.spgrid_block_linear_to_vector(t);
+      Vectori grid_base_pos = Vectori(SparseMask::LinearToCoord(block_offset)) +
+                              grid_cache.spgrid_block_linear_to_vector(t);
       Vector grid_base_pos_f = Vector(grid_base_pos);
 
       Vector grid_pos[27];
@@ -372,56 +388,50 @@ void MPM<3>::rasterize_optimized(real delta_t) {
 
       for (int p_i = particle_begin; p_i < particle_end; p_i++) {
         Particle &p = *allocator[particles[p_i]];
-
-        // ignore rigid particles ----------------------------------------------
         if (p.is_rigid()) {
           continue;
         }
-
         // add particle gravity ------------------------------------------------
         if (particle_gravity) {
           p.set_velocity(p.get_velocity() + gravity * delta_t);
         }
-
         // Note, pos is magnified (0-res) grid pos ------------- PARTICLE POS ??
         const Vector pos = p.pos * inv_delta_x;
 
-        // particle kernel (weight function) --------------- not pos-grid_pos !!
-        // (- grid_base_pos_f) added? //////////////////////////////////////////
+        // particle kernel
         Kernel kernel(pos, inv_delta_x);
-        const VectorP(&kernels)[3][3][3]           = kernel.kernels;
-        using KernelLinearized                     = VectorP[27];
-        const KernelLinearized &kernels_linearized = *reinterpret_cast<const KernelLinearized *>(&kernels[0][0][0]);
+        const VectorP(&kernels)[3][3][3] = kernel.kernels;
+        using KernelLinearized = VectorP[27];
+        const KernelLinearized &kernels_linearized =
+            *reinterpret_cast<const KernelLinearized *>(&kernels[0][0][0]);
 
-        const Vector v  = p.get_velocity();
+        const Vector v = p.get_velocity();
         const real mass = p.get_mass();
 
         // Note, apic_b has delta_x issue
-        const Matrix apic_b_inv_d_mass = p.apic_b * (Kernel::inv_D() * mass);   // c234
-        // const Matrix apic_c_inv_d_mass = p.apic_c * (16.0f * mass);          // c567
-        // const Vector apic_d_inv_d_mass = p.apic_d * (64.0f * mass);          // c8
-
+        const Matrix apic_b_inv_d_mass = p.apic_b * (Kernel::inv_D() * mass);
+        const Matrix apic_c_inv_d_mass = p.apic_c * (16.0f * mass); // c567
         const Vector mass_v = mass * v;
         Matrix delta_t_tmp_force(0.0f);
-
-        // from particles.cpp --------------------------------------------------
         delta_t_tmp_force = (delta_t * p.calculate_force());
 
-        // for each node
         for (int node_id = 0; node_id < Cache::num_nodes; node_id++) {
-          Vector dpos         = pos - grid_pos[node_id];
-          GridState<dim> &g   = grid_cache.linear[grid_cache.kernel_linearized(node_id) + grid_cache_offset];
+          Vector dpos = pos - grid_pos[node_id];
+
+          GridState<dim> &g =
+              grid_cache.linear[grid_cache.kernel_linearized(node_id) +
+                                grid_cache_offset];
+
           const VectorP &dw_w = kernels_linearized[node_id];
 
           // Coloring
           uint64 grid_state = g.get_states(), particle_state = p.states;
-          uint64 mask       = (grid_state & particle_state & state_mask) >> 1;
+          uint64 mask = (grid_state & particle_state & state_mask) >> 1;
 
           // incompatible grid and particle ------------------------------------
           if ((grid_state & mask) != (particle_state & mask)) {
             // Different color **********
             // Directly project instead of writing to the grid
-
             // apply impulse on rigid body -------------------------------------
             RigidBody<dim> *r = get_rigid_body_ptr(g.get_rigid_body_id());
             if (r == nullptr)
@@ -429,40 +439,31 @@ void MPM<3>::rasterize_optimized(real delta_t) {
             Vector rigid_v = r->get_velocity_at(delta_x * grid_pos[node_id]);
             // v : particle vel
             Vector v_acc = v;  // + apic_b_inv_d_mass * dpos / Vector(mass);
+
             Vector velocity_change = v_acc -
                                      friction_project(v_acc,
                                                       rigid_v,
                                                       p.boundary_normal,
-                                                      r->frictions[(particle_state >> (2 * r->id)) % 2]);
+                            r->frictions[(particle_state >> (2 * r->id)) % 2]);
 
-            Vector impulse = mass * dw_w[dim] * velocity_change + delta_t_tmp_force * Vector(dw_w);
+            Vector impulse = mass * dw_w[dim] * velocity_change +
+                             delta_t_tmp_force * Vector(dw_w);
+
             r->apply_tmp_impulse(impulse, delta_x * grid_pos[node_id]);
             continue;
           }
 
           VectorP delta;
           // c567
-          // Vector dposc;
-          // for (int i = 0; i < 3; i++)
-            // dposc[i] = dpos[i] * dpos[(i+1)%3];
-          // c8
-          // const real dposd = dpos[0] * dpos[1] * dpos[2];
-
-          // TC_P(pos);
-          // TC_P(grid_pos[node_id]);
-          // TC_P(dpos);
-          // TC_P(mass_v);
-          // TC_P(apic_b_inv_d_mass * dpos);
-          // TC_P(apic_c_inv_d_mass * dposc);
-          // TC_P(apic_d_inv_d_mass * dposd);
+          Vector dposc;
+          for (int i = 0; i < 3; i++)
+            dposc[i] = dpos[i] * dpos[(i+1)%3];
 
 #ifdef MLSMPM
-          delta = dw_w[dim]*(VectorP(mass_v
-                                   + apic_b_inv_d_mass * dpos
-                                   // + apic_c_inv_d_mass * dposc // c567
-                                   // + apic_d_inv_d_mass * dposd // c8
-                                   , mass) +
-                             VectorP(-delta_t_tmp_force * dpos * 4.0_f * inv_delta_x));
+          delta = dw_w[dim]*(VectorP(mass_v + apic_b_inv_d_mass * dpos
+                                            + apic_c_inv_d_mass * dposc // c567
+                                            , mass) +
+                  VectorP(-delta_t_tmp_force * dpos * 4.0_f * inv_delta_x));
 #else
           delta = dw_w[dim]* VectorP(mass_v + apic_b_inv_d_mass * dpos, mass) +
                   VectorP(delta_t_tmp_force * Vector(dw_w));
@@ -473,137 +474,96 @@ void MPM<3>::rasterize_optimized(real delta_t) {
     }
   };
 
-  // block_op_normal, called from block_op_switch ------------------------------
   __m128 S = _mm_set1_ps(-4.0_f * inv_delta_x * delta_t);
 
-  auto block_op_normal = [&](uint32 b, uint64 block_offset, GridState<dim> *g_) {
+  // block_op_normal, called from block_op_switch ------------------------------
+  auto block_op_normal = [&](uint32 b, uint64 block_offset,
+                             GridState<dim> *g_) {
     using Cache = GridCache<MPM<dim>, true>;
     Cache grid_cache(*grid, block_offset, true);
     int particle_begin;
     int particle_end = block_meta[b].particle_offset;
 
-    // each block has 128 elements/grids
-    // elements_per_block = 128 from "SPGrid_Mask.h"
     for (uint32 t = 0; t < SparseMask::elements_per_block; t++) {
-      particle_begin         = particle_end;
-      particle_end          += g_[t].particle_count;
-      int grid_cache_offset  = grid_cache.spgrid_block_to_grid_cache_block(t);
-      Vectori grid_base_pos  = Vectori(SparseMask::LinearToCoord(block_offset)) + grid_cache.spgrid_block_linear_to_vector(t);
+      particle_begin = particle_end;
+      particle_end += g_[t].particle_count;
+      int grid_cache_offset = grid_cache.spgrid_block_to_grid_cache_block(t);
+
+      Vectori grid_base_pos = Vectori(SparseMask::LinearToCoord(block_offset)) +
+                              grid_cache.spgrid_block_linear_to_vector(t);
       Vector grid_base_pos_f = Vector(grid_base_pos);
 
-      // for each particle inside grid
       for (int p_i = particle_begin; p_i < particle_end; p_i++) {
         Particle &p = *allocator[particles[p_i]];
-
-        // apply gravity -------------------------------------------------------
         if (particle_gravity) {
           p.set_velocity(p.get_velocity() + gravity * delta_t);
         }
 
-        // Note, pos is magnified grid pos - or particle pos? ------------------
+        // Note, pos is magnified grid pos
         __m128 pos_ = _mm_mul_ps(p.pos.v, _mm_set1_ps(inv_delta_x));
 
-// kernel
 #if defined(MLSMPM)
-        MLSMPMFastKernel32 kernel(_mm_sub_ps(pos_, grid_base_pos_f), inv_delta_x);
-        const __m128(&kernelss)[3][3] = kernel.kernels;
+        MLSMPMFastKernel32 kernel(_mm_sub_ps(pos_, grid_base_pos_f),
+                                  inv_delta_x);
+        const __m128(&kernels)[3][3] = kernel.kernels;
         using KernelLinearized = real[3 * 3 * 4];
-        const KernelLinearized &kernels_linearized = *reinterpret_cast<const KernelLinearized *>(&kernelss[0][0][0]);
+        const KernelLinearized &kernels_linearized =
+            *reinterpret_cast<const KernelLinearized *>(&kernels[0][0][0]);
 #else
         Kernel kernel(Vector(pos_), inv_delta_x);
         const VectorP(&kernels)[3][3][3] = kernel.kernels;
         using KernelLinearized = VectorP[27];
-        const KernelLinearized &kernels_linearized = *reinterpret_cast<const KernelLinearized *>(&kernels[0][0][0]);
+        const KernelLinearized &kernels_linearized =
+            *reinterpret_cast<const KernelLinearized *>(&kernels[0][0][0]);
 #endif
-
-        // particle to grid ----------------------------------------------------
-        const __m128 v  = p.get_velocity().v;
+        const __m128 v = p.get_velocity().v;
         const real mass = p.get_mass();
-        //Vector velo     = p.get_velocity();
-        __m128 mass_    = _mm_set1_ps(p.get_mass());
-
-        // Note, apic_b has delta_x issue --------------------------------------
-        const Matrix apic_b_inv_d_mass = p.apic_b * (Kernel::inv_D() * mass);   // c234, inv_D()=4, it has the effect of 1/dx^2
-        // const Matrix apic_c_inv_d_mass = p.apic_c * (16.0f * mass);              // c567, it has the effect of 1/dx^4 using dpos
-        // const Vector apic_d_inv_d_mass = p.apic_d * (64.0f * mass);              // c8,   it has the effect of 1/dx^6 using dpos
-
-        // TC_P(apic_b_inv_d_mass);
+        __m128 mass_ = _mm_set1_ps(p.get_mass());
+        // Note, apic_b has delta_x issue
+        const Matrix apic_b_inv_d_mass = p.apic_b * (Kernel::inv_D() * mass);
+        const Matrix apic_c_inv_d_mass = p.apic_c * (16.0f * mass); // c567
 
         const __m128 mass_v = _mm_mul_ps(_mm_set1_ps(mass), v);
-
-        // from particles.cpp --------------------------------------------------
         auto stress = p.calculate_force();
 
-        // not used
         __m128 delta_t_tmp_force_[3];
-        Matrix &delta_t_tmp_force = reinterpret_cast<Matrix &>(delta_t_tmp_force_);
+        Matrix &delta_t_tmp_force =
+            reinterpret_cast<Matrix &>(delta_t_tmp_force_);
         for (int i = 0; i < 3; i++) {
           delta_t_tmp_force_[i] = _mm_mul_ps(_mm_set1_ps(delta_t), stress[i]);
         }
 
-        // relative_pos = p.pos - grid_base_pos_f
-        __m128 err      = _mm_set1_ps(0.5f);
         __m128 rela_pos = _mm_sub_ps(pos_, grid_base_pos_f);
-        // rela_pos     = _mm_sub_ps(rela_pos, err); // rela-pos modified ------
-
         __m128 affine[3];
-        // __m128 ac[3], ad;
-        // __m128 acp;
+        __m128 ac[3];
+        __m128 acp;
 
-        // affine = (stress)(S) + (apic_b)(D^-1)(mass)
-        // S      = [-4dt/dx] [-4dt/dx] [-4dt/dx] [-4dt/dx]
-        for (int i = 0; i < 3; i++){
+        for (int i = 0; i < 3; i++)
           affine[i] = _mm_fmadd_ps(stress[i], S, apic_b_inv_d_mass[i]);
-        }
 
-        // __m128 SS    = _mm_set1_ps(0.5_f);
-        // __m128 dpos0 = _mm_mul_ps(dpos, SS);
-
-        // for (int i = 0; i < 3; i++){
-        //   ac[i] = _mm_mul_ps(apic_c_inv_d_mass[i], broadcast(dpos,i));
-        //   ac[i] = _mm_mul_ps(ac[i], broadcast(dpos,(i+1)%3));
-        // }
-        // acp         = _mm_add_ps(ac[0], _mm_add_ps(ac[1], ac[2]));
-        // affine_prod = _mm_add_ps(affine_prod, acp);
-
-        // option 2:
-        // for (int i = 0; i < 3; i++){
-        //   ab[i] = _mm_mul_ps(apic_b_inv_d_mass[i], broadcast(dpos,i));
-        //   ac[i] = _mm_mul_ps(apic_c_inv_d_mass[i], broadcast(dpos,i));
-        //   ac[i] = _mm_mul_ps(ac[i], broadcast(dpos,(i+1)%3));
-        // }
-        // abp = _mm_add_ps(ab[0], _mm_add_ps(ab[1], ab[2]));
-        // acp = _mm_add_ps(ac[0], _mm_add_ps(ac[1], ac[2]));
-        // db = _mm_mul_ps(weight, abp);
-        // dc = _mm_mul_ps(weight, acp);
-        // ad = _mm_mul_ps(apic_d_inv_d_mass, _mm_mul_ps(broadcast(dpos,1),
-                                           // _mm_mul_ps(broadcast(dpos,2),
-                                                      // broadcast(dpos,3))));
-        // affine_prod = _mm_add_ps(affine_prod, acp);
-        // affine_prod = _mm_add_ps(affine_prod, ad);
-
-// '\' is for line continuation and '#ifdef' is for preprocessing
-// update grid node velocity ---------------------------------------------------
-// contrib = [m][ap1][ap2][ap3] // 0x7:0111
-// delta   = [w.m][w.ap1][w.ap2][w.ap3]
-// g       = [g0+w.m][g1+w.ap1][g2+w.ap2][g3+w.ap3]
-// gVel    = g
+// Loop start
 #ifdef MLSMPM
 #define LOOP(node_id)                                                          \
   {                                                                            \
-    __m128 weight =                                                            \
-        _mm_set1_ps(kernelss[node_id / 9][node_id / 3 % 3][node_id % 3]);      \
     __m128 dpos = _mm_sub_ps(rela_pos, grid_pos_offset_[node_id]);             \
-    __m128 affine_prod =                                                       \
-        _mm_fmadd_ps(affine[2], broadcast(dpos, 2),                            \
-            _mm_fmadd_ps(affine[1], broadcast(dpos, 1),                        \
-                 _mm_fmadd_ps(affine[0], broadcast(dpos, 0), mass_v)));        \
-    __m128 contrib = _mm_blend_ps(mass_, affine_prod, 0x7);                    \
-    __m128 delta = _mm_mul_ps(weight, contrib);                                \
     __m128 g =                                                                 \
         grid_cache                                                             \
             .linear[grid_cache.kernel_linearized(node_id) + grid_cache_offset] \
             .v;                                                                \
+    __m128 weight =                                                            \
+        _mm_set1_ps(kernels[node_id / 9][node_id / 3 % 3][node_id % 3]);       \
+    __m128 affine_prod = _mm_fmadd_ps(                                         \
+        affine[2], broadcast(dpos, 2),                                         \
+        _mm_fmadd_ps(affine[1], broadcast(dpos, 1),                            \
+                     _mm_fmadd_ps(affine[0], broadcast(dpos, 0), mass_v)));    \
+    for (int i = 0; i < 3; i++){ \
+      ac[i] = _mm_mul_ps(apic_c_inv_d_mass[i], broadcast(dpos,i)); \
+      ac[i] = _mm_mul_ps(ac[i], broadcast(dpos,(i+1)%3)); \
+    } \
+    acp         = _mm_add_ps(ac[0], _mm_add_ps(ac[1], ac[2])); \
+    affine_prod = _mm_add_ps(affine_prod, acp); \
+    __m128 contrib = _mm_blend_ps(mass_, affine_prod, 0x7);                    \
+    __m128 delta = _mm_mul_ps(weight, contrib);                                \
     g = _mm_add_ps(g, delta);                                                  \
     grid_cache                                                                 \
         .linear[grid_cache.kernel_linearized(node_id) + grid_cache_offset]     \
@@ -630,35 +590,26 @@ void MPM<3>::rasterize_optimized(real delta_t) {
 #endif
         TC_REPEAT27(LOOP);
 #undef LOOP
-        // p.apic_d.v = ad; // a
-        // p.apic_a[1].v = db; // b
-        // p.apic_a[2].v = dc; // c
-        // TC_P(p.apic_d);
-        // TC_P(p.apic_a[1]);
-        // TC_P(p.apic_a[2]);
       }
     }
   };
 
-  // block op switch -----------------------------------------------------------
+  // block_op_switch -----------------------------------------------------------
   auto block_op_switch = [&](uint32 b, uint64 block_offset, GridState<dim> *g) {
-    // if rigid body is in the current block
     if (rigid_page_map->Test_Page(block_offset)) {
       block_op_rigid(b, block_offset, g);
-    // if not
     } else {
       block_op_normal(b, block_offset, g);
     }
   };
 
-  // calls block op switch, in mpm.h -------------------------------------------
-  parallel_for_each_block_with_index(block_op_switch, false, true); // target, fat, colored
-
-  // apply velocity on rigid bodies
+  // calls block_op_switch
+  parallel_for_each_block_with_index(block_op_switch, false, true);
   for (auto &r : rigids) {
     r->apply_tmp_velocity();
   }
 }
+// end -------------------------------------------------------------------------
 
 // resample -------------------------------------------------------------- : OFF
 static_assert(mpm_kernel_order == 2, "");
@@ -789,50 +740,55 @@ void MPM<3>::resample_optimized() {
     int particle_begin;
     int particle_end = block_meta[b].particle_offset;
 
-    // for each grid
     for (uint32 t = 0; t < SparseMask::elements_per_block; t++) {
       particle_begin = particle_end;
 
       // number of particles in grid
-      particle_end          += g[t].particle_count;
-      int grid_cache_offset  = grid_cache.spgrid_block_to_grid_cache_block(t);
-      Vectori grid_base_pos  = Vectori(SparseMask::LinearToCoord(block_offset)) + grid_cache.spgrid_block_linear_to_vector(t);
+      particle_end += g[t].particle_count;
+
+      int grid_cache_offset = grid_cache.spgrid_block_to_grid_cache_block(t);
+
+      Vectori grid_base_pos = Vectori(SparseMask::LinearToCoord(block_offset)) +
+                              grid_cache.spgrid_block_linear_to_vector(t);
       Vector grid_base_pos_f = Vector(grid_base_pos);
 
       Vector grid_pos[27];
-      for (int i = 0; i < 27; i++)
+      for (int i = 0; i < 27; i++) {
         grid_pos[i] = grid_pos_offset[i] + grid_base_pos_f;
+      }
 
       // for each non-rigid particle in grid
       for (int k = particle_begin; k < particle_end; k++) {
         Particle &p = *allocator[particles[k]];
-
-        // ignore rigid particles ----------------------------------------------
         if (p.is_rigid()) {
           continue;
         }
         real delta_t = base_delta_t;
         Vector v(0.0f);
         Matrix b(0.0f);
-        // Matrix c(0.0f); // c567
-        // Vector d(0.0f); // c8
+        Matrix c(0.0f); // c567
         Matrix cdg(0.0f);
         Vector pos = p.pos * this->inv_delta_x;
 
         RegionND<dim> region(VectorI(0), VectorI(Kernel::kernel_size));
 
         Kernel kernel(pos, inv_delta_x);
-        const VectorP(&kernels)[3][3][3]           = kernel.kernels;
-        using KernelLinearized                     = VectorP[27];
-        const KernelLinearized &kernels_linearized = *reinterpret_cast<const KernelLinearized *>(&kernels[0][0][0]);
+        const VectorP(&kernels)[3][3][3] = kernel.kernels;
+        using KernelLinearized = VectorP[27];
+        const KernelLinearized &kernels_linearized =
+            *reinterpret_cast<const KernelLinearized *>(&kernels[0][0][0]);
 
         int rigid_id = -1;
 
         // for each node
         for (int node_id = 0; node_id < Cache::num_nodes; node_id++) {
-          Vector dpos         = pos - grid_pos[node_id];
-          GridState<dim> &g   = grid_cache.linear[grid_cache.kernel_linearized(node_id) + grid_cache_offset];
-          auto grid_vel       = Vector(g.velocity_and_mass);
+          Vector dpos = pos - grid_pos[node_id];
+
+          GridState<dim> &g =
+              grid_cache.linear[grid_cache.kernel_linearized(node_id) +
+                                grid_cache_offset];
+
+          auto grid_vel = Vector(g.velocity_and_mass);
           const VectorP &dw_w = kernels_linearized[node_id];
 
           // Coloring
@@ -859,9 +815,11 @@ void MPM<3>::resample_optimized() {
 
             // if particle is near boundary
             if (p.near_boundary()) {
+
               // not used
               Vector tv = p.get_velocity() - v_g;
-              tv = tv - p.boundary_normal*std::min(0.0_f, dot(p.boundary_normal, tv));
+              tv = tv - p.boundary_normal*std::min(0.0_f,
+                                                dot(p.boundary_normal, tv));
 
               // add pushing force, if near boundary ---------------------------
               fake_v = friction_project(
@@ -879,28 +837,20 @@ void MPM<3>::resample_optimized() {
 
           // *** b += Matrix::outer_product(dw_w[dim] * grid_vel, dpos);
           //     cdg += Matrix::outer_product(grid_vel, Vector(dw_w));
-
-          // d = fused_mul_add(w_grid_vel,
-          //       fused_mul_add(Vector(dpos[1]), fused_mul_add(Vector(dpos[2]), Vector(dpos[3]), Vector(0)), Vector(0)),
-          //         d);
-
           Vector w_grid_vel = dw_w[dim] * grid_vel;
           for (int r = 0; r < dim; r++) {
             b[r]   = fused_mul_add(w_grid_vel, Vector(dpos[r]), b[r]);
-            // c[r]   = fused_mul_add(w_grid_vel, Vector(dpos[r]), c[r]);
-            // c[r]   = fused_mul_add(c[r], Vector(dpos[(r+1)%3]), c[r]);
+            c[r]   = fused_mul_add(b[r], Vector(dpos[(r+1)%3]), c[r]); // c567
             cdg[r] = fused_mul_add(grid_vel, Vector(dw_w[r]), cdg[r]);
           }
         }
 
         if (p.near_boundary()) {
           p.apic_b = Matrix(0);
-          // p.apic_c = Matrix(0); // c567
-          // p.apic_d = Vector(0); // c8
+          p.apic_c = Matrix(0); // c567
         } else {
           p.apic_b = damp_affine_momemtum(b);
-          // p.apic_c = damp_affine_momemtum(c); // c567
-          // p.apic_d = d; // c8
+          p.apic_c = damp_affine_momemtum(c); // c567
         }
 
         // set non-rigid particle velocity (v) ---------------------------------
@@ -915,10 +865,8 @@ void MPM<3>::resample_optimized() {
           cdg[i] = fused_mul_add(delta_t_vec, cdg[i], Vector::axis(i));
         }
 
-        // plasticity, in particles.cpp ----------------------------------------
         plasticity_counter += p.plasticity(cdg);
 
-        // particle advection --------------------------------------------------
         p.pos = fused_mul_add(p.get_velocity(), delta_t_vec, p.pos);
 
         // Position correction
@@ -939,7 +887,6 @@ void MPM<3>::resample_optimized() {
     }
   };
 
-  // block_op_normal -----------------------------------------------------------
   auto block_op_normal = [&](uint32 b, uint64 block_offset, GridState<dim> *g) {
     using Cache = GridCache<MPM<dim>, true>;
     Cache grid_cache(*grid, block_offset, false);
@@ -948,28 +895,27 @@ void MPM<3>::resample_optimized() {
 
     real inv_delta_x = this->inv_delta_x;
 
-    // for each grid cell inside the block
     for (uint32 t = 0; t < SparseMask::elements_per_block; t++) {
       particle_begin = particle_end;
-      particle_end  += g[t].particle_count;
+      particle_end += g[t].particle_count;
 
-      int grid_cache_offset  = grid_cache.spgrid_block_to_grid_cache_block(t);
-      Vectori grid_base_pos  = Vectori(SparseMask::LinearToCoord(block_offset)) + grid_cache.spgrid_block_linear_to_vector(t);
+      int grid_cache_offset = grid_cache.spgrid_block_to_grid_cache_block(t);
+
+      Vectori grid_base_pos = Vectori(SparseMask::LinearToCoord(block_offset)) +
+                              grid_cache.spgrid_block_linear_to_vector(t);
       Vector grid_base_pos_f = Vector(grid_base_pos);
 
-      // for each particle inside the grid cell
       for (int k = particle_begin; k < particle_end; k++) {
-        Particle &p  = *allocator[particles[k]];
+        Particle &p = *allocator[particles[k]];
         real delta_t = base_delta_t;
-        Vector pos   = p.pos * inv_delta_x; // ---------------------------------
-        //TC_P(pos);
+        Vector pos = p.pos * inv_delta_x;
 
-// kernel
 #if defined(MLSMPM)
         MLSMPMFastKernel32 kernel(pos - grid_base_pos_f, inv_delta_x);
-        const __m128(&kernelss)[3][3]              = kernel.kernels;
-        using KernelLinearized                     = real[3 * 3 * 4];
-        const KernelLinearized &kernels_linearized = *reinterpret_cast<const KernelLinearized *>(&kernelss[0][0][0]);
+        const __m128(&kernels)[3][3] = kernel.kernels;
+        using KernelLinearized = real[3 * 3 * 4];
+        const KernelLinearized &kernels_linearized =
+            *reinterpret_cast<const KernelLinearized *>(&kernels[0][0][0]);
 #else
         Kernel kernel(pos, inv_delta_x);
         const VectorP(&kernels)[3][3][3] = kernel.kernels;
@@ -978,29 +924,20 @@ void MPM<3>::resample_optimized() {
             *reinterpret_cast<const KernelLinearized *>(&kernels[0][0][0]);
 #endif
 
-        // SIMD Def Region
+        /// SIMD Def Region
+        __m128 b_[3];
+        __m128 c_[3]; // c567
         __m128 cdg_[3];
-        __m128 b_[3]; // c234
-        // __m128 c_[3]; // c567
-        // __m128 d_ = _mm_setzero_ps(); // c8
         for (int i = 0; i < dim; i++) {
-          b_[i]   = _mm_setzero_ps();
-          // c_[i]   = _mm_setzero_ps(); // c567
+          b_[i] = _mm_setzero_ps();
+          c_[i] = _mm_setzero_ps(); // c567
           cdg_[i] = _mm_setzero_ps();
         }
-        __m128 v_       = _mm_setzero_ps();
-        __m128 pos_     = pos.v;
+        __m128 v_ = _mm_setzero_ps();
+        __m128 pos_ = pos.v;
         __m128 rela_pos = _mm_sub_ps(pos_, grid_base_pos_f);
+///
 
-        // c_[r] = _mm_fmadd_ps(w_grid_vel, broadcast(dpos, r), c_[r]);
-        // c_[r] = _mm_fmadd_ps(c_[r], broadcast(dpos, (r+1)%3), c_[r]);
-
-        // d_ = _mm_fmadd_ps(w_grid_vel, _mm_mul_ps(broadcast(dpos,1),
-        //                               _mm_mul_ps(broadcast(dpos,2),
-        //                                          broadcast(dpos,3))), d_);
-
-// w = kernels[3][3][3], uses 'MLSMPMFastKernel32'
-// w_grid_vel = (w)(grid_vel)
 #if defined(MLSMPM)
 #define LOOP(node_id)                                                          \
   {                                                                            \
@@ -1011,11 +948,12 @@ void MPM<3>::resample_optimized() {
             .v;                                                                \
     __m128 grid_vel = _mm_load_ps(addr);                                       \
     __m128 w =                                                                 \
-        _mm_set1_ps(kernelss[node_id / 9][node_id / 3 % 3][node_id % 3]);      \
+        _mm_set1_ps(kernels[node_id / 9][node_id / 3 % 3][node_id % 3]);       \
     v_ = _mm_fmadd_ps(grid_vel, w, v_);                                        \
     __m128 w_grid_vel = _mm_mul_ps(w, grid_vel);                               \
     for (int r = 0; r < dim; r++) {                                            \
       b_[r] = _mm_fmadd_ps(w_grid_vel, broadcast(dpos, r), b_[r]);             \
+      c_[r] = _mm_fmadd_ps(b_[r], broadcast(dpos, (r+1)%3), c_[r]); \
     }                                                                          \
   }
 #else
@@ -1045,40 +983,28 @@ void MPM<3>::resample_optimized() {
         } else {
           for (int i = 0; i < dim; i++) {
             p.apic_b[i].v = b_[i];
-            // p.apic_c[i].v = c_[i]; // c567
+            p.apic_c[i].v = c_[i]; // c567
           }
-          // p.apic_d.v = d_; // c8
         }
-        // why dpos is larger than 1? because the grid is divided to subgrids
-        //p.apic_a[0].v = dpos;
-        //TC_P(p.apic_c[0]-pos+grid_base_pos_f);
-        //TC_P(p.apic_a[0]);
 
         p.set_velocity(Vector(v_));
 
         __m128 delta_t_vec = _mm_set1_ps(delta_t);
 #ifdef MLSMPM
-        // use APIC as dv/dx for calculating F ---------------------------------
-        // C_defGrad = I + dt * (-4/dx^2)*APIC
-        // '(-4/dx^2)*APIC' is 'cp2to4' in the PolyPIC paper format
-
+        // cdg = -b * 4 * inv_delta_x;
         __m128 scale = _mm_set1_ps(-4.0_f * inv_delta_x * delta_t);
 
         cdg_[0] = _mm_fmadd_ps(scale, b_[0], _mm_set_ps(0, 0, 0, 1));
         cdg_[1] = _mm_fmadd_ps(scale, b_[1], _mm_set_ps(0, 0, 1, 0));
         cdg_[2] = _mm_fmadd_ps(scale, b_[2], _mm_set_ps(0, 1, 0, 0));
 #else
-        // cdg = I + dt * cdg;
+        // cdg = Matrix(1.0f) + delta_t * cdg;
         cdg_[0] = _mm_fmadd_ps(delta_t_vec, cdg_[0], _mm_set_ps(0, 0, 0, 1));
         cdg_[1] = _mm_fmadd_ps(delta_t_vec, cdg_[1], _mm_set_ps(0, 0, 1, 0));
         cdg_[2] = _mm_fmadd_ps(delta_t_vec, cdg_[2], _mm_set_ps(0, 1, 0, 0));
 #endif
         Matrix &cdg = reinterpret_cast<Matrix &>(cdg_[0]);
-
-        // plasticity, in particles.cpp ----------------------------------------
         p.plasticity(cdg);
-
-        // particle advection --------------------------------------------------
         p.pos.v = _mm_fmadd_ps(v_, delta_t_vec, p.pos.v);
       }
     }
@@ -1088,25 +1014,21 @@ void MPM<3>::resample_optimized() {
     r->reset_tmp_velocity();
   }
 
-  // block op switch -----------------------------------------------------------
   auto block_op_switch = [&](uint32 b, uint64 block_offset, GridState<dim> *g) {
-    // if rigid body is in the current block
     if (rigid_page_map->Test_Page(block_offset)) {
       block_op_rigid(b, block_offset, g);
-    // if not
     } else {
       block_op_normal(b, block_offset, g);
     }
   };
 
-  // calls block op switch -----------------------------------------------------
-  parallel_for_each_block_with_index(block_op_switch, false, false); // target, fat, colored
+  parallel_for_each_block_with_index(block_op_switch, false, false);
 
-  // apply velocity on rigid bodies
   for (auto &r : rigids) {
     r->apply_tmp_velocity();
   }
 }
+// optimized resampling end ----------------------------------------------------
 
 template void MPM<2>::resample_optimized();
 template void MPM<3>::resample_optimized();
