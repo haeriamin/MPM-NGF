@@ -11,7 +11,7 @@ if __name__ == '__main__':
     Scale       = 1    # problem scale
     # if not -1, causes segmentation fault:
     FrictionRB  = -1  # rigidBody friction (not particle's)
-    FrictionLS  = 0.4  # levelset friction (not particle's)
+    FrictionLS  = 0.15  # levelset friction (not particle's)
     E           = 35e4  # Young's modulus
     nu          = .3    # Poisson ratio
     oneG        = 9.81

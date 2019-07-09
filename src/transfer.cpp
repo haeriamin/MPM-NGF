@@ -410,7 +410,6 @@ void MPM<3>::rasterize_optimized(real delta_t) {
 
         // Note, apic_b has delta_x issue
         const Matrix apic_b_inv_d_mass = p.apic_b * (Kernel::inv_D() * mass);
-        const Matrix apic_c_inv_d_mass = p.apic_c * (16.0f * mass); // c567
         const Vector mass_v = mass * v;
         Matrix delta_t_tmp_force(0.0f);
         delta_t_tmp_force = (delta_t * p.calculate_force());
@@ -454,15 +453,8 @@ void MPM<3>::rasterize_optimized(real delta_t) {
           }
 
           VectorP delta;
-          // c567
-          Vector dposc;
-          for (int i = 0; i < 3; i++)
-            dposc[i] = dpos[i] * dpos[(i+1)%3];
-
 #ifdef MLSMPM
-          delta = dw_w[dim]*(VectorP(mass_v + apic_b_inv_d_mass * dpos
-                                            + apic_c_inv_d_mass * dposc // c567
-                                            , mass) +
+          delta = dw_w[dim]*(VectorP(mass_v + apic_b_inv_d_mass * dpos, mass) +
                   VectorP(-delta_t_tmp_force * dpos * 4.0_f * inv_delta_x));
 #else
           delta = dw_w[dim]* VectorP(mass_v + apic_b_inv_d_mass * dpos, mass) +
@@ -521,8 +513,6 @@ void MPM<3>::rasterize_optimized(real delta_t) {
         __m128 mass_ = _mm_set1_ps(p.get_mass());
         // Note, apic_b has delta_x issue
         const Matrix apic_b_inv_d_mass = p.apic_b * (Kernel::inv_D() * mass);
-        const Matrix apic_c_inv_d_mass = p.apic_c * (16.0f * mass); // c567
-
         const __m128 mass_v = _mm_mul_ps(_mm_set1_ps(mass), v);
         auto stress = p.calculate_force();
 
@@ -535,8 +525,6 @@ void MPM<3>::rasterize_optimized(real delta_t) {
 
         __m128 rela_pos = _mm_sub_ps(pos_, grid_base_pos_f);
         __m128 affine[3];
-        __m128 ac[3];
-        __m128 acp;
 
         for (int i = 0; i < 3; i++)
           affine[i] = _mm_fmadd_ps(stress[i], S, apic_b_inv_d_mass[i]);
@@ -556,12 +544,6 @@ void MPM<3>::rasterize_optimized(real delta_t) {
         affine[2], broadcast(dpos, 2),                                         \
         _mm_fmadd_ps(affine[1], broadcast(dpos, 1),                            \
                      _mm_fmadd_ps(affine[0], broadcast(dpos, 0), mass_v)));    \
-    for (int i = 0; i < 3; i++){ \
-      ac[i] = _mm_mul_ps(apic_c_inv_d_mass[i], broadcast(dpos,i)); \
-      ac[i] = _mm_mul_ps(ac[i], broadcast(dpos,(i+1)%3)); \
-    } \
-    acp         = _mm_add_ps(ac[0], _mm_add_ps(ac[1], ac[2])); \
-    affine_prod = _mm_add_ps(affine_prod, acp); \
     __m128 contrib = _mm_blend_ps(mass_, affine_prod, 0x7);                    \
     __m128 delta = _mm_mul_ps(weight, contrib);                                \
     g = _mm_add_ps(g, delta);                                                  \
@@ -766,7 +748,6 @@ void MPM<3>::resample_optimized() {
         real delta_t = base_delta_t;
         Vector v(0.0f);
         Matrix b(0.0f);
-        Matrix c(0.0f); // c567
         Matrix cdg(0.0f);
         Vector pos = p.pos * this->inv_delta_x;
 
@@ -840,17 +821,14 @@ void MPM<3>::resample_optimized() {
           Vector w_grid_vel = dw_w[dim] * grid_vel;
           for (int r = 0; r < dim; r++) {
             b[r]   = fused_mul_add(w_grid_vel, Vector(dpos[r]), b[r]);
-            c[r]   = fused_mul_add(b[r], Vector(dpos[(r+1)%3]), c[r]); // c567
             cdg[r] = fused_mul_add(grid_vel, Vector(dw_w[r]), cdg[r]);
           }
         }
 
         if (p.near_boundary()) {
           p.apic_b = Matrix(0);
-          p.apic_c = Matrix(0); // c567
         } else {
           p.apic_b = damp_affine_momemtum(b);
-          p.apic_c = damp_affine_momemtum(c); // c567
         }
 
         // set non-rigid particle velocity (v) ---------------------------------
@@ -926,11 +904,9 @@ void MPM<3>::resample_optimized() {
 
         /// SIMD Def Region
         __m128 b_[3];
-        __m128 c_[3]; // c567
         __m128 cdg_[3];
         for (int i = 0; i < dim; i++) {
           b_[i] = _mm_setzero_ps();
-          c_[i] = _mm_setzero_ps(); // c567
           cdg_[i] = _mm_setzero_ps();
         }
         __m128 v_ = _mm_setzero_ps();
@@ -953,7 +929,6 @@ void MPM<3>::resample_optimized() {
     __m128 w_grid_vel = _mm_mul_ps(w, grid_vel);                               \
     for (int r = 0; r < dim; r++) {                                            \
       b_[r] = _mm_fmadd_ps(w_grid_vel, broadcast(dpos, r), b_[r]);             \
-      c_[r] = _mm_fmadd_ps(b_[r], broadcast(dpos, (r+1)%3), c_[r]); \
     }                                                                          \
   }
 #else
@@ -976,14 +951,11 @@ void MPM<3>::resample_optimized() {
 #endif
         TC_REPEAT27(LOOP);
 #undef LOOP
-
-        // calculate APIC ------------------------------------------------------
         if (rpic_damping != 0 && apic_damping != 0) {
           p.apic_b = damp_affine_momemtum(b);
         } else {
           for (int i = 0; i < dim; i++) {
             p.apic_b[i].v = b_[i];
-            p.apic_c[i].v = c_[i]; // c567
           }
         }
 
