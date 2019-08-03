@@ -1,4 +1,4 @@
-# Taylor-Couette Flow, by Amin Haeri [email](ahaeri92@gmail.com)
+# Taylor-Couette Flow without Top Plate, by Amin Haeri [email](ahaeri92@gmail.com)
 import taichi as tc
 from math import *
 
@@ -10,8 +10,8 @@ if __name__ == '__main__':
     frameRate   = 50   # Hz
     Scale       = 1    # problem scale
     # if not -1, causes segmentation fault:
-    FrictionRB  = -1  # rigidBody friction (not particle's)
-    FrictionLS  = 0.15  # levelset friction (not particle's)
+    FrictionRB  = -1   # rigidBody friction (not particle's)
+    FrictionLS  = 0.4  # levelset friction (not particle's)
     E           = 35e4  # Young's modulus
     nu          = .3    # Poisson ratio
     oneG        = 9.81
@@ -40,7 +40,7 @@ if __name__ == '__main__':
     clean_boundary            = False, # def: true, clear boundary particles
     warn_particle_deletion    = True,
     verbose_bgeo              = False,  # write other particles attributes, "visualize.cpp"
-    Houdini                   = False,
+    Houdini                   = True,
     snapshots                 = False,
     )
 
@@ -55,7 +55,7 @@ if __name__ == '__main__':
     # floor:
     levelset.add_plane(tc.Vector(0, +1, 0), -(.1499-(.05*Scale)) )
     # top:
-    levelset.add_plane(tc.Vector(0, -1, 0), +(.1501+(.05*Scale)) )
+    # levelset.add_plane(tc.Vector(0, -1, 0), +(.1501+(.05*Scale)) )
     # level-set friction
     levelset.set_friction(FrictionLS)
     # dynamic level-set: False
@@ -89,15 +89,11 @@ if __name__ == '__main__':
     )
 
     #---------------------------------------------------------------------------
-    ## inner cylinder
-    # def rotation_function(t):
-    #   return tc.Vector(0, Omega*t, 0)
     inner = mpm.add_particles(
         type              = 'rigid',
         density           = 1e6,
-        scale             = (.0999*2*Scale, .1*Scale, .0999*2*Scale), # ri=coef/2
-      # scripted_rotation = tc.function13(rotation_function),
-        scripted_position = tc.constant_function13(tc.Vector(.3, .15, .3)),
+        scale             = (.0999*2*Scale, .2*Scale, .0999*2*Scale), # ri=coef/2
+        scripted_position = tc.constant_function13(tc.Vector(.3, .2, .3)),
         rotation_axis     = (0, 1, 0),
         initial_angular_velocity = Omega,
         friction          = FrictionRB,
@@ -106,8 +102,8 @@ if __name__ == '__main__':
     )
     innerAux = mpm.add_particles(
         type              = 'rigid',
-        scale             = (.19*Scale, .1*Scale, .19*Scale),
-        scripted_position = tc.constant_function13(tc.Vector(.3, .15, .3)),
+        scale             = (.19*Scale, .2*Scale, .19*Scale),
+        scripted_position = tc.constant_function13(tc.Vector(.3, .2, .3)),
         scripted_rotation = tc.constant_function13(tc.Vector(0, 0, 0)),
         rotation_axis     = (0, 1, 0),
         friction          = 0.0001,
@@ -122,55 +118,6 @@ if __name__ == '__main__':
         axis             = (0, 1, 0),
     )
 
-    #---------------------------------------------------------------------------
-    ## change in rotation direction if required
-    def frame_update(t, frame_dt):
-        if t<(finalTime/2)-dt or t >(finalTime/2)+dt:
-            return
-        mpm.add_articulation(
-            type             = 'stepper',
-            obj0             = inner,
-            obj1             = innerAux,
-            angular_velocity = -Omega,
-            axis             = (0, 1, 0),
-        )
-
-    #---------------------------------------------------------------------------
-    # ## outer cylinder
-    # outer = mpm.add_particles(
-    #         type              = 'rigid',
-    #         density           = 100000,
-    #         scale             = (.4000*Scale, .1020*Scale, .4000*Scale),
-    #         scripted_rotation = tc.constant_function13(tc.Vector(0, 0, 0)),
-    #         scripted_position = tc.constant_function13(tc.Vector(.3, .15, .3)),
-    #         friction          = Friction,
-    #         codimensional     = False,
-    #         mesh_fn           = 'projects/mpm/data/cylinderInner.obj'
-    # )
-    #---------------------------------------------------------------------------
-    # ## floor
-    # floor = mpm.add_particles(
-    #         type              = 'rigid',
-    #         density           = 100000,
-    #         scripted_rotation = tc.constant_function13(tc.Vector(0, 0, 0)),
-    #         scale             = (2.15*Scale, .1*Scale, 2.15*Scale),
-    #         scripted_position = tc.constant_function13(tc.Vector(.3, (.15-(.05*Scale)), .3)),
-    #         friction          = Friction,
-    #         codimensional     = False,
-    #         mesh_fn           = 'projects/mpm/data/cylinder_jet.obj'
-    # )
-    #---------------------------------------------------------------------------
-    # ## ceil
-    # ceil = mpm.add_particles(
-    #         type              = 'rigid',
-    #         density           = 100000,
-    #         scripted_rotation = tc.constant_function13(tc.Vector(180, 0, 0)),
-    #         scale             = (2.15*Scale, .1*Scale, 2.15*Scale),
-    #         scripted_position = tc.constant_function13(tc.Vector(.3, (.15+(.05*Scale)), .3)),
-    #         friction          = Friction,
-    #         codimensional     = False,
-    #         mesh_fn           = 'projects/mpm/data/cylinder_jet.obj'
-    # )
     #---------------------------------------------------------------------------
     # ## confining plate
     # def position_function(t):
@@ -193,6 +140,5 @@ if __name__ == '__main__':
     #---------------------------------------------------------------------------
     mpm.simulate(
         clear_output_directory = True,
-      # frame_update           = frame_update,
         print_profile_info     = True,
     )
