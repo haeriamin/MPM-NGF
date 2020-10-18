@@ -3,4 +3,4 @@
 
 This is a customized version of the MLS-MPM code written by [Yuanming Hu (MIT CSAIL)](http://taichi.graphics/me/) for simulating Taylor-Couette flow in reduced gravity. It aims to develop Mars Rovers wheels interacting with deformable terrains.
 
-<img src="https://github.com/haeriamin/files/blob/master/indExcav.gif"> <img src="https://github.com/haeriamin/files/blob/master/wheelSoil.gif">
+<img src="https://github.com/haeriamin/files/blob/master/indExcav.gif"> <img src="https://github.com/haeriamin/files/blob/master/wheelSoil.gif"> <img src="https://github.com/haeriamin/files/blob/master/explate1.gif"> <img src="https://github.com/haeriamin/files/blob/master/silo.gif"> <img src="https://github.com/haeriamin/files/blob/master/tcFlow.gif">
