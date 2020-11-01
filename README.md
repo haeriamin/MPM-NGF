@@ -1,4 +1,4 @@
-#  Material Point Method and Nonlocal Granular Fluidity for Modeling Granular Flows and Their Interactions with Rigid Bodies
+#  Material Point Method with Nonlocal Granular Fluidity for Modeling Granular Flows (and their interactions with rigid bodies)
 <!-- #### [[Source](https://github.com/yuanming-hu/taichi_mpm)] [[Introduction](https://www.youtube.com/watch?v=8iyvhGF9f7o)] [[Paper](http://taichi.graphics/wp-content/uploads/2018/05/mls-mpm-cpic.pdf)] -->
 
 This is a customized version of Taichi MPM written by [Yuanming Hu (MIT CSAIL)](http://taichi.graphics/me/) for modeling granular flows with the Nonlocal Granular Fluidity constitutive model.
