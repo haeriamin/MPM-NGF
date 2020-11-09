@@ -158,7 +158,9 @@ std::string MPM<dim>::add_particles(const Config &config) {
 
       // global ----------------------------------------------------------------
       p->vol = pow<dim>(delta_x) / maximum;
-      p->set_mass(p->vol * config.get("density", 400.0f));
+      // p->vol = (4.0_f / 3.0_f * (real)M_PI * pow<3>(delta_x/2)) / maximum;
+
+      p->set_mass(p->vol * config.get("density", 400.0f) * config.get("packing_fraction", 1.0_f));
       p->set_velocity(config.get("initial_velocity", Vector(0.0f)));
 
       // stork nod -------------------------------------------------------------
@@ -341,6 +343,14 @@ std::vector<RenderParticle> MPM<dim>::get_render_particles() const {
   */
 }
 
+// added: Reset grid granular fluidity
+template <int dim>
+void MPM<dim>::reset_grid_granular_fluidity() {
+  parallel_for_each_active_grid([&](GridState<dim> &g) {
+    g.granular_fluidity = 0.0_f;
+  });
+}
+
 // normalize grid & apply external force ---------------------------------------
 template <int dim>
 void MPM<dim>::normalize_grid_and_apply_external_force(
@@ -387,10 +397,7 @@ void MPM<dim>::apply_grid_boundary_conditions(
     for (auto &ind_ : region) {
       Vectori ind = block_base_coord + ind_.get_ipos();
 
-      // how it calcs grid mass ?? //
-      // verified! only grids between cylinders have mass. //
       if (grid_mass(ind) == 0.0f) {
-        // TC_P(Vector(ind)); //
         continue;
       }
 
@@ -402,11 +409,11 @@ void MPM<dim>::apply_grid_boundary_conditions(
       real mu;
 
       //------------------------------------------------------------------------
-      // if grid node's -3<= phi <= 0 (boundary grid)---------------------------
+      // if grid node's -3 <= phi <= 0 (boundary grid) -------------------------
       // and if not leaky levelset
       if (expr_leaky_levelset == 0) {
         phi = levelset.sample(pos, t);
-        if (phi < -3 || 0 < phi)
+        if (phi < -3 || 0 < phi)  // was 0 
           continue;
         // normall to the levelset which its phi<0
         n = levelset.get_spatial_gradient(pos, t);
@@ -419,12 +426,14 @@ void MPM<dim>::apply_grid_boundary_conditions(
           } else {
             boundary_velocity = Vector(0);
           }
-
         // main ----------------------------------------------------------------
         } else {
           // for non-dynamic levelset, d(phi)/dt=0
           boundary_velocity =
               -levelset.get_temporal_derivative(pos, t) * n * delta_x;
+
+          // added: Grid granular fluidity boundary condition
+          get_grid(ind).granular_fluidity = 0.0_f;
         }
 
         // boundary friction is the same as levelset friction ------------------
@@ -471,7 +480,7 @@ void MPM<dim>::apply_grid_boundary_conditions(
       VectorP &v_and_m = get_grid(ind).velocity_and_mass;
 
       // set v as boundary grid velocity
-      // dim'th elements of "v_and_m" store mass
+      // dim'th elements of "v_and_m" stores mass
       v_and_m = VectorP(v, v_and_m[dim]);
     }
   };
@@ -555,19 +564,29 @@ void MPM<3>::apply_dirichlet_boundary_conditions() {
   //  }
 }
 
-// particle-levelset interaction ----------------------------------------- : OFF
+// particle-levelset interaction -------------------------------------- : ON/OFF
 template <int dim>
 void MPM<dim>::particle_collision_resolution(real t) {
   parallel_for_each_particle([&](Particle &p) {
     Vector pos = p.pos * inv_delta_x;
     real phi = this->levelset.sample(pos, t);
     // if there is collision (phi<0)
-    if (phi < 0) {
+    if (phi <= 0.25) {
       Vector gradient = this->levelset.get_spatial_gradient(pos, t);
-      p.pos          -= gradient * phi * delta_x;
-      p.set_velocity(p.get_velocity() -
-        dot(gradient, p.get_velocity()) * gradient);
+      p.pos -= gradient * phi * delta_x;
+      p.set_velocity(p.get_velocity()-dot(gradient, p.get_velocity())*gradient);
     }
+  });
+}
+
+// added: particle_bc_at_levelset ------------------------------------- : ON/OFF
+template <int dim>
+void MPM<dim>::particle_bc_at_levelset(real t) {
+  parallel_for_each_particle([&](Particle &p) {
+    Vector pos = p.pos * inv_delta_x;
+    real phi = this->levelset.sample(pos, t);
+    if (phi < 0.25)
+      p.gf = 0.0_f;
   });
 }
 
@@ -614,14 +633,18 @@ void MPM<dim>::substep() {
   TC_PROFILE("sort_particles_and_populate_grid",
              sort_particles_and_populate_grid());
 
+  // added: Reset grid granular fluidity
+  TC_PROFILE("reset_grid_granular_fluidity",
+              reset_grid_granular_fluidity());
+
   // articulate ----------------------------------------------------------------
   if (has_rigid_body()) {
     for (int i = 0; i < config_backup.get("coupling_iterations", 1); i++) {
-      // check rigidBody collision ---------------------------------------------
+      // check rigidBody collision --------------------------------------- : OFF
       TC_PROFILE("rigidify", rigidify(delta_t));
       // rigid body articulation in "mpm.h" ------------------------------------
       TC_PROFILE("articulate", articulate(delta_t));
-      //
+      // modified (CDF)
       TC_PROFILE("rasterize_rigid_boundary", rasterize_rigid_boundary());
     }
   }
@@ -668,6 +691,12 @@ void MPM<dim>::substep() {
     TC_PROFILE("gather_cdf", gather_cdf());
   }
 
+  // added: particle bc near levelsets -------------------------------- : On/OFF
+  if (config_backup.get("particle_bc_at_levelset", false)) {
+    TC_PROFILE("particle_bc_at_levelset",
+      particle_bc_at_levelset(this->current_t));
+  }
+
   // rasterize (particle to grid) ----------------------------------------------
   if (!config_backup.get("benchmark_rasterize", false)) {
     // optimized : ON
@@ -707,7 +736,7 @@ void MPM<dim>::substep() {
   TC_PROFILE("boundary_condition",
     apply_grid_boundary_conditions(this->levelset, this->current_t));
 
-  // only works for 2D, so it should be changed --------------------------------
+  // ---------------------------------------------------------------------------
   if (config_backup.get("dirichlet_boundary_radius", 0.0_f) > 0.0_f) {
     TC_PROFILE("apply_dirichlet_boundary_conditions",
       apply_dirichlet_boundary_conditions());
@@ -738,7 +767,7 @@ void MPM<dim>::substep() {
     TC_PROFILE("clean boundary", clear_boundary_particles());
   }
 
-  // particle collision -------------------------------------------------- : OFF
+  // particle collision ------------------------------------------------ : On/OFF
   if (config_backup.get("particle_collision", false)) {
     TC_PROFILE("particle_collision",
       particle_collision_resolution(this->current_t));
@@ -925,7 +954,7 @@ void MPM<3>::draw_cdf(const Config &config) {
 }
 template <int dim>
 void MPM<dim>::sort_allocator() {
-  TC_TRACE("Reording particles");
+  TC_TRACE("Reordering particles");
   Time::Timer _("reorder");
 
   std::swap(allocator.pool_, allocator.pool);

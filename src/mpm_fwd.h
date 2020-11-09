@@ -26,9 +26,9 @@ template <int dim>
 
 // friction project ------------------------------------------------------------
 TC_FORCE_INLINE VectorND<dim, real> friction_project(
-    const VectorND<dim, real> &velocity, // e.g. grid vel
-    const VectorND<dim, real> &base_velocity, // e.g. boundary vel
-    const VectorND<dim, real> &normal, // e.g. normal to levelset
+    const VectorND<dim, real> &velocity, // e.g. particle vel
+    const VectorND<dim, real> &base_velocity, // e.g. grid vel
+    const VectorND<dim, real> &normal, // e.g. normal from grid to particle
     real friction) {
   using Vector = VectorND<dim, real>;
   auto relative_vel = velocity - base_velocity;
@@ -45,13 +45,12 @@ TC_FORCE_INLINE VectorND<dim, real> friction_project(
   }
 
   // slip and separate
-  real   normal_norm             = dot(normal, relative_vel);
+  real normal_norm = dot(normal, relative_vel);
   Vector tangential_relative_vel = relative_vel - normal_norm * normal;
-  real   tangential_norm         = length(tangential_relative_vel);
-  real   tangential_scale        =
-         std::max(tangential_norm + std::min(normal_norm, 0.0_f) * friction,
-              0.0_f) /
-         std::max(1e-30_f, tangential_norm);
+  real tangential_norm = length(tangential_relative_vel);
+  real tangential_scale =
+    std::max(tangential_norm + std::min(normal_norm, 0.0_f) * friction, 0.0_f) /
+    std::max(1e-30_f, tangential_norm);
 
   Vector projected_relative_vel  =
          tangential_scale * tangential_relative_vel +
@@ -65,22 +64,32 @@ template <int dim>
 constexpr int get_particle_size_upper_bound() {
   static_assert(dim == 2 || dim == 3, "only 2D and 3D supported");
   if (dim == 2) {
-    return 192;
+    return 384;  // was 192
   } else {
-    return 640; // was 320 -----------------------------------------------------
+    return 640;  // was 320 (added)
   }
 }
 
-//
+// size: 32 -> 64 (added)
 template <int dim>
 struct GridState {
-  VectorND<dim + 1, real> velocity_and_mass;
-  float32 distance = 0;
-  uint32 states = 0;
-  uint32 particle_count;
-  Spinlock lock;
-  uint16 flags;
 
+  VectorND<dim + 1, real> velocity_and_mass;  // (dim+1) x 4 = 16 bytes
+  float64 distance = 0.0_f;   // 8 // was float32
+  uint32 states = 0;      // 4
+  uint32 particle_count;  // 4
+  Spinlock lock;          // 2
+  uint16 flags;           // 2
+
+  // TODO: make it more efficient
+  // added:
+  float32 granular_fluidity = 0.0_f; // 4
+  float32 aux0; // 4
+  float32 aux1; // 4 // was float64
+  float64 aux2; // 8
+  float64 aux3; // 8
+
+  // size = 0 for static members
   static constexpr int max_num_rigid_bodies = 12;
   static constexpr int total_bits = 32;
   static constexpr uint32 tag_bits = max_num_rigid_bodies * 2;
@@ -89,6 +98,7 @@ struct GridState {
   static constexpr uint32 tag_mask = (1u << tag_bits) - 1;
   static constexpr uint32 id_mask = ((1u << id_bits) - 1u) << tag_bits;
 
+  // size = 0 for functions
   int get_rigid_body_id() const {
     return (states >> tag_bits) - 1;
   }
@@ -120,7 +130,7 @@ struct GridState {
 
 static_assert(bit::is_power_of_two((int)sizeof(GridState<2>)),
               "GridState<2> size must be POT");
-
+              
 static_assert(bit::is_power_of_two((int)sizeof(GridState<3>)),
               "GridState<3> size must be POT");
 

@@ -182,6 +182,9 @@ class MPM : public Simulation<dim> {
 
   void rasterize_rigid_boundary();
 
+  // added
+  void reset_grid_granular_fluidity();
+
   void normalize_grid_and_apply_external_force(Vector velocity_increment);
 
   real calculate_energy();
@@ -207,6 +210,7 @@ class MPM : public Simulation<dim> {
     return Vector(get_grid(ind).velocity_and_mass);
   }
 
+  void particle_bc_at_levelset(real t);  // added
   void particle_collision_resolution(real t);
   void rigid_body_levelset_collision(real t, real dt);
   void substep();
@@ -328,13 +332,14 @@ class MPM : public Simulation<dim> {
     std::string directory = config_backup.get_string("frame_directory");
     std::string filename;
 //------------------------------------------------------------------------------
-    if (frame_count%50 == 0 || frame_count == 1) {
-      filename = fmt::format("{}/particle_{:04}", directory, frame_count);
-      write_particle(filename);
+    if (config_backup.get("write_particle_info", false)){
+      if (frame_count%50 == 0 || frame_count == 1) {
+        filename = fmt::format("{}/particle_{:04}", directory, frame_count);
+        write_particle(filename);
+      }
     }
 
-    bool Houdini = config_backup.get("Houdini", true);
-    if (Houdini){
+    if (config_backup.get("write_Houdini_and_rigidbody_info", false)){
 //------------------------------------------------------------------------------
       filename = fmt::format("{}/{:04}.bgeo", directory, frame_count);
       write_partio(filename);

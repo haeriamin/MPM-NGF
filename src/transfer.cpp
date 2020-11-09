@@ -60,7 +60,7 @@ struct GridCache {
   static constexpr int scratch_size =
       scratch_x_size * scratch_y_size * scratch_z_size;
 
-  static constexpr int num_nodes = pow<dim>(mpm_kernel_order + 1);
+  static constexpr int num_nodes = pow<dim>(mpm_kernel_order + 1); // quad3D: 27
 
   using ElementType =
       std::conditional_t<v_and_m_only, Vector4f, GridState<dim>>;
@@ -84,6 +84,7 @@ struct GridCache {
             (x / 3 % 3) * scratch_z_size + x % 3);
   }
 
+  // constructor
   TC_FORCE_INLINE GridCache(SparseGrid &grid,
                             const uint64 &block_offset,
                             bool write_back)
@@ -287,33 +288,33 @@ TC_FORCE_INLINE __m128 make_float3(float a, float b, float c) {
 
 // clang-format off
 TC_ALIGNED(64) const static __m128 grid_pos_offset_[27] = {
-    make_float3(0, 0, 0),
-    make_float3(0, 0, 1),
-    make_float3(0, 0, 2),
-    make_float3(0, 1, 0),
-    make_float3(0, 1, 1),
-    make_float3(0, 1, 2),
-    make_float3(0, 2, 0),
-    make_float3(0, 2, 1),
-    make_float3(0, 2, 2),
-    make_float3(1, 0, 0),
-    make_float3(1, 0, 1),
-    make_float3(1, 0, 2),
-    make_float3(1, 1, 0),
-    make_float3(1, 1, 1),
-    make_float3(1, 1, 2),
-    make_float3(1, 2, 0),
-    make_float3(1, 2, 1),
-    make_float3(1, 2, 2),
-    make_float3(2, 0, 0),
-    make_float3(2, 0, 1),
-    make_float3(2, 0, 2),
-    make_float3(2, 1, 0),
-    make_float3(2, 1, 1),
-    make_float3(2, 1, 2),
-    make_float3(2, 2, 0),
-    make_float3(2, 2, 1),
-    make_float3(2, 2, 2),
+    make_float3(0, 0, 0),  // 0
+    make_float3(0, 0, 1),  // 1
+    make_float3(0, 0, 2),  // 2
+    make_float3(0, 1, 0),  // 3
+    make_float3(0, 1, 1),  // 4, i-1
+    make_float3(0, 1, 2),  // 5
+    make_float3(0, 2, 0),  // 6
+    make_float3(0, 2, 1),  // 7
+    make_float3(0, 2, 2),  // 8
+    make_float3(1, 0, 0),  // 9
+    make_float3(1, 0, 1),  // 10, j-1
+    make_float3(1, 0, 2),  // 11
+    make_float3(1, 1, 0),  // 12, k-1
+    make_float3(1, 1, 1),  // 13, i,j,k
+    make_float3(1, 1, 2),  // 14, k+1
+    make_float3(1, 2, 0),  // 15
+    make_float3(1, 2, 1),  // 16, j+1
+    make_float3(1, 2, 2),  // 17
+    make_float3(2, 0, 0),  // 18
+    make_float3(2, 0, 1),  // 19
+    make_float3(2, 0, 2),  // 20
+    make_float3(2, 1, 0),  // 21
+    make_float3(2, 1, 1),  // 22, i+1
+    make_float3(2, 1, 2),  // 23
+    make_float3(2, 2, 0),  // 24
+    make_float3(2, 2, 1),  // 25
+    make_float3(2, 2, 2),  // 26
 };
 // clang-format on
 
@@ -386,6 +387,16 @@ void MPM<3>::rasterize_optimized(real delta_t) {
         grid_pos[i] = grid_pos_offset[i] + grid_base_pos_f;
       }
 
+      // added: Reset forces on rigid body boundary particles
+      if (config_backup.get("visualize_particle_impulses", false))
+      {
+        for (int r_p_i = particle_begin; r_p_i < particle_end; r_p_i++) {
+          Particle &r_p = *allocator[particles[r_p_i]];
+          if (r_p.is_rigid())
+            r_p.rigid_impulse = Vector(0.0_f);
+        }
+      }
+
       for (int p_i = particle_begin; p_i < particle_end; p_i++) {
         Particle &p = *allocator[particles[p_i]];
         if (p.is_rigid()) {
@@ -408,11 +419,23 @@ void MPM<3>::rasterize_optimized(real delta_t) {
         const Vector v = p.get_velocity();
         const real mass = p.get_mass();
 
+        // added: Disconnection handling
+        real gf;
+        real dist = 0.05_f * delta_x;
+        if (p.p > 0.0_f && !(p.near_boundary() && p.boundary_distance <= dist))  // ?? was ok with excavation
+        // if (p.p > 0.0_f)  // pressure @ n
+        {
+          gf = p.gf;
+        }
+        else {
+          gf = 0.0_f;
+        }
+        Matrix delta_t_tmp_force(0.0_f);
+        delta_t_tmp_force = (delta_t * p.calculate_force());
+
         // Note, apic_b has delta_x issue
         const Matrix apic_b_inv_d_mass = p.apic_b * (Kernel::inv_D() * mass);
         const Vector mass_v = mass * v;
-        Matrix delta_t_tmp_force(0.0f);
-        delta_t_tmp_force = (delta_t * p.calculate_force());
 
         for (int node_id = 0; node_id < Cache::num_nodes; node_id++) {
           Vector dpos = pos - grid_pos[node_id];
@@ -429,38 +452,66 @@ void MPM<3>::rasterize_optimized(real delta_t) {
 
           // incompatible grid and particle ------------------------------------
           if ((grid_state & mask) != (particle_state & mask)) {
-            // Different color **********
-            // Directly project instead of writing to the grid
-            // apply impulse on rigid body -------------------------------------
-            RigidBody<dim> *r = get_rigid_body_ptr(g.get_rigid_body_id());
-            if (r == nullptr)
-              continue;
-            Vector rigid_v = r->get_velocity_at(delta_x * grid_pos[node_id]);
-            // v : particle vel
-            Vector v_acc = v;  // + apic_b_inv_d_mass * dpos / Vector(mass);
+            // calculate impulse on rigid bodies -------------------------------
+            if (config_backup.get("compute_particle_impulses", false))
+            {
+              RigidBody<dim> *r = get_rigid_body_ptr(g.get_rigid_body_id());
+              if (r == nullptr)
+                continue;
+              Vector impulse(0.0_f);
+              Vector force_tmp(0.0_f);
+              // if (p.boundary_distance <= 0.05_f * delta_x){  // for excav
+                Vector rigid_v = r->get_velocity_at(delta_x * grid_pos[node_id]);
+                Vector v_acc = v;  // + apic_b_inv_d_mass * dpos / Vector(mass);
+                Vector velocity_change =
+                  v_acc -
+                  friction_project(
+                    v_acc,
+                    rigid_v,
+                    p.boundary_normal,
+                    r->frictions[(particle_state >> (2 * r->id)) % 2]);
+                impulse = mass * dw_w[dim] * velocity_change
+                        + delta_t_tmp_force * Vector(dw_w);
+                // added: Force and torque on rigid bodies' center of mass
+                force_tmp = impulse / delta_t;
+                r->rigid_force_tmp += force_tmp;
+                r->rigid_torque_tmp += cross(delta_x * grid_pos[node_id] - r->position, force_tmp);
+              // }
 
-            Vector velocity_change = v_acc -
-                                     friction_project(v_acc,
-                                                      rigid_v,
-                                                      p.boundary_normal,
-                            r->frictions[(particle_state >> (2 * r->id)) % 2]);
+              // Impulse on rigid body boundary particles
+              // TODO: Make it more realistic for visualization only
+              if (config_backup.get("visualize_particle_impulses", false))
+              {
+                for (int r_p_i = particle_begin; r_p_i < particle_end; r_p_i++)
+                {
+                  Particle &r_p = *allocator[particles[r_p_i]];
+                  if (r_p.is_rigid()){
+                    // Vector dpos2 = pos - r_p.pos*inv_delta_x;
+                    // real w2 = 1.0_f - sqrt(pow(dpos2[0],2)+pow(dpos2[1],2)+pow(dpos2[2],2)) / sqrt(2);
+                    r_p.rigid_impulse = force_tmp;
+                    // r_p.rigid_impulse += force_tmp * w2;
+                  }
+                }
+              }
 
-            Vector impulse = mass * dw_w[dim] * velocity_change +
-                             delta_t_tmp_force * Vector(dw_w);
-
-            r->apply_tmp_impulse(impulse, delta_x * grid_pos[node_id]);
+              // Apply impulses on rigid body
+              if (config_backup.get("affect_particle_impulses", false)){
+                r->apply_tmp_impulse(impulse, delta_x * grid_pos[node_id]);
+                // r->apply_tmp_impulse(impulse, delta_x * grid_pos[13]);  // ok for excav
+              }
+            }
             continue;
           }
 
           VectorP delta;
-#ifdef MLSMPM
+          real delta_gf;  // added
+
           delta = dw_w[dim]*(VectorP(mass_v + apic_b_inv_d_mass * dpos, mass) +
                   VectorP(-delta_t_tmp_force * dpos * 4.0_f * inv_delta_x));
-#else
-          delta = dw_w[dim]* VectorP(mass_v + apic_b_inv_d_mass * dpos, mass) +
-                  VectorP(delta_t_tmp_force * Vector(dw_w));
-#endif
+          delta_gf = dw_w[dim] * gf;
+
           g.velocity_and_mass += delta;
+          g.granular_fluidity += delta_gf;  // added
         }
       }
     }
@@ -471,11 +522,13 @@ void MPM<3>::rasterize_optimized(real delta_t) {
   // block_op_normal, called from block_op_switch ------------------------------
   auto block_op_normal = [&](uint32 b, uint64 block_offset,
                              GridState<dim> *g_) {
-    using Cache = GridCache<MPM<dim>, true>;
+    // using Cache = GridCache<MPM<dim>, true>;
+    using Cache = GridCache<MPM<dim>>;  // added
     Cache grid_cache(*grid, block_offset, true);
     int particle_begin;
     int particle_end = block_meta[b].particle_offset;
 
+    // grid loop
     for (uint32 t = 0; t < SparseMask::elements_per_block; t++) {
       particle_begin = particle_end;
       particle_end += g_[t].particle_count;
@@ -485,6 +538,7 @@ void MPM<3>::rasterize_optimized(real delta_t) {
                               grid_cache.spgrid_block_linear_to_vector(t);
       Vector grid_base_pos_f = Vector(grid_base_pos);
 
+      // particle loop
       for (int p_i = particle_begin; p_i < particle_end; p_i++) {
         Particle &p = *allocator[particles[p_i]];
         if (particle_gravity) {
@@ -514,7 +568,17 @@ void MPM<3>::rasterize_optimized(real delta_t) {
         // Note, apic_b has delta_x issue
         const Matrix apic_b_inv_d_mass = p.apic_b * (Kernel::inv_D() * mass);
         const __m128 mass_v = _mm_mul_ps(_mm_set1_ps(mass), v);
-        auto stress = p.calculate_force();
+
+        // added: Disconnection handling
+        __m128 gf;
+        if (p.p > 0.0_f) {  // pressure @ n  
+          gf = _mm_set_ss(p.gf);
+        }
+        else {
+          gf = _mm_set_ss(0.0_f);
+        }
+        Matrix stress(0.0_f);
+        stress = p.calculate_force();
 
         __m128 delta_t_tmp_force_[3];
         Matrix &delta_t_tmp_force =
@@ -537,7 +601,7 @@ void MPM<3>::rasterize_optimized(real delta_t) {
     __m128 g =                                                                 \
         grid_cache                                                             \
             .linear[grid_cache.kernel_linearized(node_id) + grid_cache_offset] \
-            .v;                                                                \
+            .velocity_and_mass;                                                \
     __m128 weight =                                                            \
         _mm_set1_ps(kernels[node_id / 9][node_id / 3 % 3][node_id % 3]);       \
     __m128 affine_prod = _mm_fmadd_ps(                                         \
@@ -549,7 +613,16 @@ void MPM<3>::rasterize_optimized(real delta_t) {
     g = _mm_add_ps(g, delta);                                                  \
     grid_cache                                                                 \
         .linear[grid_cache.kernel_linearized(node_id) + grid_cache_offset]     \
-        .v = g;                                                                \
+        .velocity_and_mass = g;                                                \
+    __m128 delta_gf = _mm_mul_ss(weight, gf);                                  \
+    __m128 gg =                                                                \
+        _mm_set_ss(grid_cache                                                  \
+            .linear[grid_cache.kernel_linearized(node_id) + grid_cache_offset] \
+            .granular_fluidity);                                               \
+    gg = _mm_add_ss(gg, delta_gf);                                             \
+    _mm_store_ss((float *)&grid_cache                                          \
+        .linear[grid_cache.kernel_linearized(node_id) + grid_cache_offset]     \
+        .granular_fluidity, gg);                                               \
   }
 #else
 #define LOOP(node_id)                                                          \
@@ -558,7 +631,7 @@ void MPM<3>::rasterize_optimized(real delta_t) {
     __m128 g =                                                                 \
         grid_cache                                                             \
             .linear[grid_cache.kernel_linearized(node_id) + grid_cache_offset] \
-            .v;                                                                \
+            .velocity_and_mass;                                                \
     const VectorP &dw_w = kernels_linearized[node_id];                         \
     __m128 delta =                                                             \
         dw_w[dim] *                                                            \
@@ -567,7 +640,7 @@ void MPM<3>::rasterize_optimized(real delta_t) {
     g = _mm_add_ps(g, delta);                                                  \
     grid_cache                                                                 \
         .linear[grid_cache.kernel_linearized(node_id) + grid_cache_offset]     \
-        .v = g;                                                                \
+        .velocity_and_mass = g;                                                \
   }
 #endif
         TC_REPEAT27(LOOP);
@@ -587,8 +660,16 @@ void MPM<3>::rasterize_optimized(real delta_t) {
 
   // calls block_op_switch
   parallel_for_each_block_with_index(block_op_switch, false, true);
+  // apply impulses from particles on rigid bodies
   for (auto &r : rigids) {
     r->apply_tmp_velocity();
+
+    // added: Reset force and torque on rigid bodies' center of mass
+    r->rigid_force = r->rigid_force_tmp;
+    r->rigid_torque = r->rigid_torque_tmp;
+    r->rigid_force_tmp = Vector(0.0_f);
+    r->rigid_torque_tmp = Vector(0.0_f);
+    
   }
 }
 // end -------------------------------------------------------------------------
@@ -677,7 +758,7 @@ void MPM<dim>::resample() {
     cdg = b * (-4 * inv_delta_x);
 #endif
     cdg = Matrix(1.0f) + delta_t * cdg;
-    plasticity_counter += p.plasticity(cdg);
+    plasticity_counter += p.plasticity(cdg, 0.0f);
 
     p.pos += delta_t * p.get_velocity();
 
@@ -722,6 +803,7 @@ void MPM<3>::resample_optimized() {
     int particle_begin;
     int particle_end = block_meta[b].particle_offset;
 
+    // element loop
     for (uint32 t = 0; t < SparseMask::elements_per_block; t++) {
       particle_begin = particle_end;
 
@@ -739,17 +821,22 @@ void MPM<3>::resample_optimized() {
         grid_pos[i] = grid_pos_offset[i] + grid_base_pos_f;
       }
 
-      // for each non-rigid particle in grid
+      // for each (non-rigid) particle in grid
       for (int k = particle_begin; k < particle_end; k++) {
         Particle &p = *allocator[particles[k]];
         if (p.is_rigid()) {
           continue;
         }
         real delta_t = base_delta_t;
-        Vector v(0.0f);
-        Matrix b(0.0f);
-        Matrix cdg(0.0f);
+        Vector v(0.0_f);
+        Matrix b(0.0_f);
+        Matrix cdg(0.0_f);
         Vector pos = p.pos * this->inv_delta_x;
+
+        // added:
+        Vector v_r(0.0_f);
+        real friction_r = 0.0_f;
+        // int c = 0;
 
         RegionND<dim> region(VectorI(0), VectorI(Kernel::kernel_size));
 
@@ -777,53 +864,452 @@ void MPM<3>::resample_optimized() {
           uint64 particle_state = p.states;
           uint64 mask = (grid_state & particle_state & state_mask) >> 1;
 
-          // incompatible grid and particle
-          if ((grid_state & mask) != (particle_state & mask)) {
+          if ((grid_state & mask) != (particle_state & mask))
+          {
             // different color
             Vector fake_v = p.get_velocity();
             RigidBody<dim> *r = get_rigid_body_ptr(g.get_rigid_body_id());
             Vector v_g(0.0_f);
             real friction = 0;
-
-            // rigid body
             if (r != nullptr) {
-              v_g = r->get_velocity_at(grid_pos[node_id] * delta_x);
+              v_g = r->get_velocity_at(grid_pos[node_id] * delta_x);  // verified
               rigid_id = g.get_rigid_body_id();
               /* there might be frictions for inside and outside of rigid body.
               but for now, they are the same */
               friction = r->frictions[(particle_state >> (2 * r->id)) % 2];
             }
-
-            // if particle is near boundary
-            if (p.near_boundary()) {
-
-              // not used
-              Vector tv = p.get_velocity() - v_g;
-              tv = tv - p.boundary_normal*std::min(0.0_f,
-                                                dot(p.boundary_normal, tv));
-
-              // add pushing force, if near boundary ---------------------------
+            if (p.near_boundary())
+            {
               fake_v = friction_project(
-                      p.get_velocity(),  // + p.apic_b * dpos * kernel.inv_D(),
-                                         v_g, // grid node vel
-                                         p.boundary_normal,
-                                         friction)
-                       + p.boundary_normal * (delta_t * delta_x * pushing_force);
+                        p.get_velocity(),  // + p.apic_b * dpos * kernel.inv_D(),
+                        v_g,  // grid node (in rigidbody) vel
+                        p.boundary_normal,
+                        friction);
             }
             grid_vel = fake_v;
-          } // incompatible grid end
-
-          // *** v += dw_w[dim] * grid_vel;
-          v = fused_mul_add(grid_vel, Vector(dw_w[dim]), v); // a*b+c, c=v=0
-
-          // *** b += Matrix::outer_product(dw_w[dim] * grid_vel, dpos);
-          //     cdg += Matrix::outer_product(grid_vel, Vector(dw_w));
-          Vector w_grid_vel = dw_w[dim] * grid_vel;
-          for (int r = 0; r < dim; r++) {
-            b[r]   = fused_mul_add(w_grid_vel, Vector(dpos[r]), b[r]);
-            cdg[r] = fused_mul_add(grid_vel, Vector(dw_w[r]), cdg[r]);
           }
+
+          // added: Modified rb interaction approach
+          if (node_id == 13)
+          {
+            RigidBody<dim> *r = get_rigid_body_ptr(g.get_rigid_body_id());
+            if (r != nullptr)
+            {
+              // can be more accurate
+              v_r = r->get_velocity_at(grid_pos[node_id] * delta_x);
+              friction_r = r->frictions[(particle_state >> (2 * r->id)) % 2];                
+            }
+          }
+
+          v = fused_mul_add(grid_vel, Vector(dw_w[dim]), v);
+
+          Vector w_grid_vel = dw_w[dim] * grid_vel;
+          for (int r = 0; r < dim; r++)
+            b[r] = fused_mul_add(w_grid_vel, Vector(dpos[r]), b[r]);
         }
+
+        // cdg = Matrix(1.0f) + delta_t * cdg;
+        cdg = b * (-4 * inv_delta_x);
+        Vector delta_t_vec(delta_t);
+        for (int i = 0; i < dim; i++)
+          cdg[i] = fused_mul_add(delta_t_vec, cdg[i], Vector::axis(i));
+
+        // added: laplacian of granular fluidity using central FD scheme
+        // Option 1:
+        real laplacian_gf;
+        laplacian_gf = inv_delta_x * inv_delta_x * (
+          + grid_cache.linear[grid_cache.kernel_linearized(22) + grid_cache_offset].granular_fluidity
+          + grid_cache.linear[grid_cache.kernel_linearized(4)  + grid_cache_offset].granular_fluidity
+          + grid_cache.linear[grid_cache.kernel_linearized(16) + grid_cache_offset].granular_fluidity
+          + grid_cache.linear[grid_cache.kernel_linearized(10) + grid_cache_offset].granular_fluidity
+          + grid_cache.linear[grid_cache.kernel_linearized(14) + grid_cache_offset].granular_fluidity
+          + grid_cache.linear[grid_cache.kernel_linearized(12) + grid_cache_offset].granular_fluidity
+          -(grid_cache.linear[grid_cache.kernel_linearized(13) + grid_cache_offset].granular_fluidity * 6.0_f));
+
+        // Option 2:
+        // int a = 0.5_f;
+        // // in x direction
+        // real lap_x1 =
+        //   a * inv_delta_x * inv_delta_x * (
+        //     + grid_cache.linear[grid_cache.kernel_linearized(1) + grid_cache_offset].granular_fluidity
+        //     + grid_cache.linear[grid_cache.kernel_linearized(7) + grid_cache_offset].granular_fluidity
+        //     + grid_cache.linear[grid_cache.kernel_linearized(3) + grid_cache_offset].granular_fluidity
+        //     + grid_cache.linear[grid_cache.kernel_linearized(5) + grid_cache_offset].granular_fluidity
+        //     -(grid_cache.linear[grid_cache.kernel_linearized(4) + grid_cache_offset].granular_fluidity * 4.0_f)
+        //   )
+        //   +
+        //   (1-a) * (0.5_f) * inv_delta_x * inv_delta_x * (
+        //     + grid_cache.linear[grid_cache.kernel_linearized(0) + grid_cache_offset].granular_fluidity
+        //     + grid_cache.linear[grid_cache.kernel_linearized(8) + grid_cache_offset].granular_fluidity
+        //     + grid_cache.linear[grid_cache.kernel_linearized(2) + grid_cache_offset].granular_fluidity
+        //     + grid_cache.linear[grid_cache.kernel_linearized(6) + grid_cache_offset].granular_fluidity
+        //     -(grid_cache.linear[grid_cache.kernel_linearized(4) + grid_cache_offset].granular_fluidity * 4.0_f)
+        //   );
+        // real lap_x2 =
+        //   a * inv_delta_x * inv_delta_x * (
+        //     + grid_cache.linear[grid_cache.kernel_linearized(19) + grid_cache_offset].granular_fluidity
+        //     + grid_cache.linear[grid_cache.kernel_linearized(25) + grid_cache_offset].granular_fluidity
+        //     + grid_cache.linear[grid_cache.kernel_linearized(21) + grid_cache_offset].granular_fluidity
+        //     + grid_cache.linear[grid_cache.kernel_linearized(23) + grid_cache_offset].granular_fluidity
+        //     -(grid_cache.linear[grid_cache.kernel_linearized(22) + grid_cache_offset].granular_fluidity * 4.0_f)
+        //   )
+        //   +
+        //   (1-a) * (0.5_f) * inv_delta_x * inv_delta_x * (
+        //     + grid_cache.linear[grid_cache.kernel_linearized(18) + grid_cache_offset].granular_fluidity
+        //     + grid_cache.linear[grid_cache.kernel_linearized(26) + grid_cache_offset].granular_fluidity
+        //     + grid_cache.linear[grid_cache.kernel_linearized(20) + grid_cache_offset].granular_fluidity
+        //     + grid_cache.linear[grid_cache.kernel_linearized(24) + grid_cache_offset].granular_fluidity
+        //     -(grid_cache.linear[grid_cache.kernel_linearized(22) + grid_cache_offset].granular_fluidity * 4.0_f)
+        //   );
+        // // in y direction
+        // real lap_y1 =
+        //   a * inv_delta_x * inv_delta_x * (
+        //     + grid_cache.linear[grid_cache.kernel_linearized(1)  + grid_cache_offset].granular_fluidity
+        //     + grid_cache.linear[grid_cache.kernel_linearized(19) + grid_cache_offset].granular_fluidity
+        //     + grid_cache.linear[grid_cache.kernel_linearized(9)  + grid_cache_offset].granular_fluidity
+        //     + grid_cache.linear[grid_cache.kernel_linearized(11) + grid_cache_offset].granular_fluidity
+        //     -(grid_cache.linear[grid_cache.kernel_linearized(10) + grid_cache_offset].granular_fluidity * 4.0_f)
+        //   )
+        //   +
+        //   (1-a) * (0.5_f) * inv_delta_x * inv_delta_x * (
+        //     + grid_cache.linear[grid_cache.kernel_linearized(0)  + grid_cache_offset].granular_fluidity
+        //     + grid_cache.linear[grid_cache.kernel_linearized(20) + grid_cache_offset].granular_fluidity
+        //     + grid_cache.linear[grid_cache.kernel_linearized(2)  + grid_cache_offset].granular_fluidity
+        //     + grid_cache.linear[grid_cache.kernel_linearized(18) + grid_cache_offset].granular_fluidity
+        //     -(grid_cache.linear[grid_cache.kernel_linearized(10) + grid_cache_offset].granular_fluidity * 4.0_f)
+        //   );
+        // real lap_y2 =
+        //   a * inv_delta_x * inv_delta_x * (
+        //     + grid_cache.linear[grid_cache.kernel_linearized(7)  + grid_cache_offset].granular_fluidity
+        //     + grid_cache.linear[grid_cache.kernel_linearized(25) + grid_cache_offset].granular_fluidity
+        //     + grid_cache.linear[grid_cache.kernel_linearized(15) + grid_cache_offset].granular_fluidity
+        //     + grid_cache.linear[grid_cache.kernel_linearized(17) + grid_cache_offset].granular_fluidity
+        //     -(grid_cache.linear[grid_cache.kernel_linearized(16) + grid_cache_offset].granular_fluidity * 4.0_f)
+        //   )
+        //   +
+        //   (1-a) * (0.5_f) * inv_delta_x * inv_delta_x * (
+        //     + grid_cache.linear[grid_cache.kernel_linearized(6)  + grid_cache_offset].granular_fluidity
+        //     + grid_cache.linear[grid_cache.kernel_linearized(26) + grid_cache_offset].granular_fluidity
+        //     + grid_cache.linear[grid_cache.kernel_linearized(8)  + grid_cache_offset].granular_fluidity
+        //     + grid_cache.linear[grid_cache.kernel_linearized(24) + grid_cache_offset].granular_fluidity
+        //     -(grid_cache.linear[grid_cache.kernel_linearized(16) + grid_cache_offset].granular_fluidity * 4.0_f)
+        //   );
+        // // in z direction
+        // real lap_z1 =
+        //   a * inv_delta_x * inv_delta_x * (
+        //     + grid_cache.linear[grid_cache.kernel_linearized(3)  + grid_cache_offset].granular_fluidity
+        //     + grid_cache.linear[grid_cache.kernel_linearized(21) + grid_cache_offset].granular_fluidity
+        //     + grid_cache.linear[grid_cache.kernel_linearized(9)  + grid_cache_offset].granular_fluidity
+        //     + grid_cache.linear[grid_cache.kernel_linearized(15) + grid_cache_offset].granular_fluidity
+        //     -(grid_cache.linear[grid_cache.kernel_linearized(12) + grid_cache_offset].granular_fluidity * 4.0_f)
+        //   )
+        //   +
+        //   (1-a) * (0.5_f) * inv_delta_x * inv_delta_x * (
+        //     + grid_cache.linear[grid_cache.kernel_linearized(0)  + grid_cache_offset].granular_fluidity
+        //     + grid_cache.linear[grid_cache.kernel_linearized(24) + grid_cache_offset].granular_fluidity
+        //     + grid_cache.linear[grid_cache.kernel_linearized(6)  + grid_cache_offset].granular_fluidity
+        //     + grid_cache.linear[grid_cache.kernel_linearized(18) + grid_cache_offset].granular_fluidity
+        //     -(grid_cache.linear[grid_cache.kernel_linearized(12) + grid_cache_offset].granular_fluidity * 4.0_f)
+        //   );
+        // real lap_z2 =
+        //   a * inv_delta_x * inv_delta_x * (
+        //     + grid_cache.linear[grid_cache.kernel_linearized(5)  + grid_cache_offset].granular_fluidity
+        //     + grid_cache.linear[grid_cache.kernel_linearized(23) + grid_cache_offset].granular_fluidity
+        //     + grid_cache.linear[grid_cache.kernel_linearized(11) + grid_cache_offset].granular_fluidity
+        //     + grid_cache.linear[grid_cache.kernel_linearized(17) + grid_cache_offset].granular_fluidity
+        //     -(grid_cache.linear[grid_cache.kernel_linearized(14) + grid_cache_offset].granular_fluidity * 4.0_f)
+        //   )
+        //   +
+        //   (1-a) * (0.5_f) * inv_delta_x * inv_delta_x * (
+        //     + grid_cache.linear[grid_cache.kernel_linearized(2)  + grid_cache_offset].granular_fluidity
+        //     + grid_cache.linear[grid_cache.kernel_linearized(26) + grid_cache_offset].granular_fluidity
+        //     + grid_cache.linear[grid_cache.kernel_linearized(8)  + grid_cache_offset].granular_fluidity
+        //     + grid_cache.linear[grid_cache.kernel_linearized(20) + grid_cache_offset].granular_fluidity
+        //     -(grid_cache.linear[grid_cache.kernel_linearized(14) + grid_cache_offset].granular_fluidity * 4.0_f)
+        //   );
+        // // middle
+        // real lap_ = inv_delta_x * inv_delta_x * (
+        //     + grid_cache.linear[grid_cache.kernel_linearized(22) + grid_cache_offset].granular_fluidity
+        //     + grid_cache.linear[grid_cache.kernel_linearized(4)  + grid_cache_offset].granular_fluidity
+        //     + grid_cache.linear[grid_cache.kernel_linearized(16) + grid_cache_offset].granular_fluidity
+        //     + grid_cache.linear[grid_cache.kernel_linearized(10) + grid_cache_offset].granular_fluidity
+        //     + grid_cache.linear[grid_cache.kernel_linearized(14) + grid_cache_offset].granular_fluidity
+        //     + grid_cache.linear[grid_cache.kernel_linearized(12) + grid_cache_offset].granular_fluidity
+        //     -(grid_cache.linear[grid_cache.kernel_linearized(13) + grid_cache_offset].granular_fluidity * 6.0_f)
+        //   );  
+        // // all
+        // real laplacian_gf = (
+        //     + lap_x1 + lap_x2
+        //     + lap_y1 + lap_y2
+        //     + lap_z1 + lap_z2
+        //     - lap_
+        //   )/7;
+
+        // Option 3:
+        // int a1 = 0.1009_f, a2 = 0.0011_f, a3 = 0.6952_f;
+        // // ---------
+        // real uR211 =
+        //   a1 * (
+        //     grid_cache.linear[grid_cache.kernel_linearized(19) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(25) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(21) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(23) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(13) + grid_cache_offset].granular_fluidity
+        //   ) +
+        //   a2 * (
+        //     grid_cache.linear[grid_cache.kernel_linearized(18) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(26) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(20) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(24) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(10) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(16) + grid_cache_offset].granular_fluidity
+        //   ) + 
+        //   a3 * (
+        //     grid_cache.linear[grid_cache.kernel_linearized(22) + grid_cache_offset].granular_fluidity
+        //   );
+        // // ---------
+        // real uR111 =
+        //   a1 * (
+        //     grid_cache.linear[grid_cache.kernel_linearized(10) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(16) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(12) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(14) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(22) + grid_cache_offset].granular_fluidity
+        //   ) +
+        //   a2 * (
+        //     grid_cache.linear[grid_cache.kernel_linearized(9) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(11) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(15) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(17) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(19) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(25) + grid_cache_offset].granular_fluidity
+        //   ) + 
+        //   a3 * (
+        //     grid_cache.linear[grid_cache.kernel_linearized(13) + grid_cache_offset].granular_fluidity
+        //   );
+        // // ---------
+        // real uL011 =
+        //   a1 * (
+        //     grid_cache.linear[grid_cache.kernel_linearized(1) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(7) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(3) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(5) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(13) + grid_cache_offset].granular_fluidity
+        //   ) +
+        //   a2 * (
+        //     grid_cache.linear[grid_cache.kernel_linearized(0) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(2) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(6) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(8) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(10) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(16) + grid_cache_offset].granular_fluidity
+        //   ) + 
+        //   a3 * (
+        //     grid_cache.linear[grid_cache.kernel_linearized(4) + grid_cache_offset].granular_fluidity
+        //   );
+        // // ---------
+        // real uL111 =
+        //   a1 * (
+        //     grid_cache.linear[grid_cache.kernel_linearized(10) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(16) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(12) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(14) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(4) + grid_cache_offset].granular_fluidity
+        //   ) +
+        //   a2 * (
+        //     grid_cache.linear[grid_cache.kernel_linearized(9) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(11) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(15) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(17) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(1) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(7) + grid_cache_offset].granular_fluidity
+        //   ) + 
+        //   a3 * (
+        //     grid_cache.linear[grid_cache.kernel_linearized(13) + grid_cache_offset].granular_fluidity
+        //   );
+        // // ---------
+        // real uF121 =
+        //   a1 * (
+        //     grid_cache.linear[grid_cache.kernel_linearized(9) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(15) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(3) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(21) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(13) + grid_cache_offset].granular_fluidity
+        //   ) +
+        //   a2 * (
+        //     grid_cache.linear[grid_cache.kernel_linearized(0) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(6) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(18) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(24) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(10) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(16) + grid_cache_offset].granular_fluidity
+        //   ) + 
+        //   a3 * (
+        //     grid_cache.linear[grid_cache.kernel_linearized(12) + grid_cache_offset].granular_fluidity
+        //   );
+        // // ---------
+        // real uF111 =
+        //   a1 * (
+        //     grid_cache.linear[grid_cache.kernel_linearized(10) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(16) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(4) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(22) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(12) + grid_cache_offset].granular_fluidity
+        //   ) +
+        //   a2 * (
+        //     grid_cache.linear[grid_cache.kernel_linearized(1) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(7) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(19) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(25) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(9) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(15) + grid_cache_offset].granular_fluidity
+        //   ) + 
+        //   a3 * (
+        //     grid_cache.linear[grid_cache.kernel_linearized(13) + grid_cache_offset].granular_fluidity
+        //   );
+        // // ---------
+        // real uB101 =
+        //   a1 * (
+        //     grid_cache.linear[grid_cache.kernel_linearized(11) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(17) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(5) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(23) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(13) + grid_cache_offset].granular_fluidity
+        //   ) +
+        //   a2 * (
+        //     grid_cache.linear[grid_cache.kernel_linearized(2) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(8) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(20) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(26) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(10) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(16) + grid_cache_offset].granular_fluidity
+        //   ) + 
+        //   a3 * (
+        //     grid_cache.linear[grid_cache.kernel_linearized(14) + grid_cache_offset].granular_fluidity
+        //   );
+        // // ---------
+        // real uB111 =
+        //   a1 * (
+        //     grid_cache.linear[grid_cache.kernel_linearized(10) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(16) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(4) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(22) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(14) + grid_cache_offset].granular_fluidity
+        //   ) +
+        //   a2 * (
+        //     grid_cache.linear[grid_cache.kernel_linearized(1) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(7) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(19) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(25) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(11) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(17) + grid_cache_offset].granular_fluidity
+        //   ) + 
+        //   a3 * (
+        //     grid_cache.linear[grid_cache.kernel_linearized(13) + grid_cache_offset].granular_fluidity
+        //   );
+        // // ---------
+        // real uD112 =
+        //   a1 * (
+        //     grid_cache.linear[grid_cache.kernel_linearized(9) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(11) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(1) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(19) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(13) + grid_cache_offset].granular_fluidity
+        //   ) +
+        //   a2 * (
+        //     grid_cache.linear[grid_cache.kernel_linearized(0) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(2) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(18) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(20) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(12) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(14) + grid_cache_offset].granular_fluidity
+        //   ) + 
+        //   a3 * (
+        //     grid_cache.linear[grid_cache.kernel_linearized(10) + grid_cache_offset].granular_fluidity
+        //   );
+        // // ---------
+        // real uD111 =
+        //   a1 * (
+        //     grid_cache.linear[grid_cache.kernel_linearized(12) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(14) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(4) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(22) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(10) + grid_cache_offset].granular_fluidity
+        //   ) +
+        //   a2 * (
+        //     grid_cache.linear[grid_cache.kernel_linearized(3) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(5) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(21) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(23) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(9) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(11) + grid_cache_offset].granular_fluidity
+        //   ) + 
+        //   a3 * (
+        //     grid_cache.linear[grid_cache.kernel_linearized(13) + grid_cache_offset].granular_fluidity
+        //   );
+        // // ---------
+        // real uU110 =
+        //   a1 * (
+        //     grid_cache.linear[grid_cache.kernel_linearized(15) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(17) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(7) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(25) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(13) + grid_cache_offset].granular_fluidity
+        //   ) +
+        //   a2 * (
+        //     grid_cache.linear[grid_cache.kernel_linearized(6) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(8) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(24) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(26) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(12) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(14) + grid_cache_offset].granular_fluidity
+        //   ) + 
+        //   a3 * (
+        //     grid_cache.linear[grid_cache.kernel_linearized(16) + grid_cache_offset].granular_fluidity
+        //   );
+        // // ---------
+        // real uU111 =
+        //   a1 * (
+        //     grid_cache.linear[grid_cache.kernel_linearized(12) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(14) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(4) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(22) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(16) + grid_cache_offset].granular_fluidity
+        //   ) +
+        //   a2 * (
+        //     grid_cache.linear[grid_cache.kernel_linearized(3) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(5) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(21) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(23) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(15) + grid_cache_offset].granular_fluidity +
+        //     grid_cache.linear[grid_cache.kernel_linearized(17) + grid_cache_offset].granular_fluidity
+        //   ) + 
+        //   a3 * (
+        //     grid_cache.linear[grid_cache.kernel_linearized(13) + grid_cache_offset].granular_fluidity
+        //   );
+        // // all ------------
+        // real laplacian_gf = 
+        //   inv_delta_x * inv_delta_x * (
+        //     + (uR211 - uR111) - (uL111 - uL011)
+        //     + (uF121 - uF111) - (uB111 - uB101)
+        //     + (uD112 - uD111) - (uU111 - uU110)
+        //   );  
+
+        // added: Modified rb interaction approach
+        real dist = 0.05_f * delta_x;  // 0.5
+        if (p.near_boundary() && p.boundary_distance <= dist)
+        {
+          // v = friction_project(v, v_r, p.boundary_normal, friction_r);  // ok for excav
+          v = friction_project(v, v_r, p.boundary_normal, friction_r)
+            - v_r + (1.0_f-p.boundary_distance/dist) * v_r;
+
+            // laplacian_gf = 0.0_f;
+        }
+
+        // added: Update granular fluidity and deformation gradient
+        plasticity_counter += p.plasticity(cdg, laplacian_gf);
+
+        p.set_velocity(v);
 
         if (p.near_boundary()) {
           p.apic_b = Matrix(0);
@@ -831,24 +1317,9 @@ void MPM<3>::resample_optimized() {
           p.apic_b = damp_affine_momemtum(b);
         }
 
-        // set non-rigid particle velocity (v) ---------------------------------
-        p.set_velocity(v);
-
-        // *** cdg = Matrix(1.0f) + delta_t * cdg;
-        Vector delta_t_vec(delta_t);
-#ifdef MLSMPM
-        cdg = b * (-4 * inv_delta_x);
-#endif
-        for (int i = 0; i < dim; i++) {
-          cdg[i] = fused_mul_add(delta_t_vec, cdg[i], Vector::axis(i));
-        }
-
-        plasticity_counter += p.plasticity(cdg);
-
         p.pos = fused_mul_add(p.get_velocity(), delta_t_vec, p.pos);
 
-        // Position correction
-        // apply penalty on boundary particle ----------------------------------
+        // Position correction: apply penalty on boundary particle
         if (p.near_boundary()) {
           if (p.boundary_distance < -0.05 * delta_x &&
               p.boundary_distance > -delta_x * 0.3) {
@@ -860,19 +1331,23 @@ void MPM<3>::resample_optimized() {
               r->apply_tmp_impulse(delta_velocity * p.get_mass(), p.pos);
             }
           }
-        }
-      }
+        } 
+
+      }  // particle loop end
     }
   };
 
   auto block_op_normal = [&](uint32 b, uint64 block_offset, GridState<dim> *g) {
-    using Cache = GridCache<MPM<dim>, true>;
+    // using Cache = GridCache<MPM<dim>, true>;
+    using Cache = GridCache<MPM<dim>>;  // added
     Cache grid_cache(*grid, block_offset, false);
     int particle_begin;
     int particle_end = block_meta[b].particle_offset;
 
     real inv_delta_x = this->inv_delta_x;
 
+    // grid loop
+    // elements_per_block = 8 x 8 x 4 = 256
     for (uint32 t = 0; t < SparseMask::elements_per_block; t++) {
       particle_begin = particle_end;
       particle_end += g[t].particle_count;
@@ -883,6 +1358,391 @@ void MPM<3>::resample_optimized() {
                               grid_cache.spgrid_block_linear_to_vector(t);
       Vector grid_base_pos_f = Vector(grid_base_pos);
 
+      // added
+      // it's the same for each element
+      // laplacian of granular fluidity using central FD scheme
+
+      // Option 1:
+      real laplacian_gf;
+      laplacian_gf = inv_delta_x * inv_delta_x * (
+        + grid_cache.linear[grid_cache.kernel_linearized(22) + grid_cache_offset].granular_fluidity
+        + grid_cache.linear[grid_cache.kernel_linearized(4)  + grid_cache_offset].granular_fluidity
+        + grid_cache.linear[grid_cache.kernel_linearized(16) + grid_cache_offset].granular_fluidity
+        + grid_cache.linear[grid_cache.kernel_linearized(10) + grid_cache_offset].granular_fluidity
+        + grid_cache.linear[grid_cache.kernel_linearized(14) + grid_cache_offset].granular_fluidity
+        + grid_cache.linear[grid_cache.kernel_linearized(12) + grid_cache_offset].granular_fluidity
+        -(grid_cache.linear[grid_cache.kernel_linearized(13) + grid_cache_offset].granular_fluidity * 6.0_f));
+
+      // Option 2:
+      // int a = 0.5_f;
+      // // in x direction
+      // real lap_x1 =
+      //   a * inv_delta_x * inv_delta_x * (
+      //     + grid_cache.linear[grid_cache.kernel_linearized(1) + grid_cache_offset].granular_fluidity
+      //     + grid_cache.linear[grid_cache.kernel_linearized(7) + grid_cache_offset].granular_fluidity
+      //     + grid_cache.linear[grid_cache.kernel_linearized(3) + grid_cache_offset].granular_fluidity
+      //     + grid_cache.linear[grid_cache.kernel_linearized(5) + grid_cache_offset].granular_fluidity
+      //     -(grid_cache.linear[grid_cache.kernel_linearized(4) + grid_cache_offset].granular_fluidity * 4.0_f)
+      //   )
+      //   +
+      //   (1-a) * (0.5_f) * inv_delta_x * inv_delta_x * (
+      //     + grid_cache.linear[grid_cache.kernel_linearized(0) + grid_cache_offset].granular_fluidity
+      //     + grid_cache.linear[grid_cache.kernel_linearized(8) + grid_cache_offset].granular_fluidity
+      //     + grid_cache.linear[grid_cache.kernel_linearized(2) + grid_cache_offset].granular_fluidity
+      //     + grid_cache.linear[grid_cache.kernel_linearized(6) + grid_cache_offset].granular_fluidity
+      //     -(grid_cache.linear[grid_cache.kernel_linearized(4) + grid_cache_offset].granular_fluidity * 4.0_f)
+      //   );
+      // real lap_x2 =
+      //   a * inv_delta_x * inv_delta_x * (
+      //     + grid_cache.linear[grid_cache.kernel_linearized(19) + grid_cache_offset].granular_fluidity
+      //     + grid_cache.linear[grid_cache.kernel_linearized(25) + grid_cache_offset].granular_fluidity
+      //     + grid_cache.linear[grid_cache.kernel_linearized(21) + grid_cache_offset].granular_fluidity
+      //     + grid_cache.linear[grid_cache.kernel_linearized(23) + grid_cache_offset].granular_fluidity
+      //     -(grid_cache.linear[grid_cache.kernel_linearized(22) + grid_cache_offset].granular_fluidity * 4.0_f)
+      //   )
+      //   +
+      //   (1-a) * (0.5_f) * inv_delta_x * inv_delta_x * (
+      //     + grid_cache.linear[grid_cache.kernel_linearized(18) + grid_cache_offset].granular_fluidity
+      //     + grid_cache.linear[grid_cache.kernel_linearized(26) + grid_cache_offset].granular_fluidity
+      //     + grid_cache.linear[grid_cache.kernel_linearized(20) + grid_cache_offset].granular_fluidity
+      //     + grid_cache.linear[grid_cache.kernel_linearized(24) + grid_cache_offset].granular_fluidity
+      //     -(grid_cache.linear[grid_cache.kernel_linearized(22) + grid_cache_offset].granular_fluidity * 4.0_f)
+      //   );
+      // // in y direction
+      // real lap_y1 =
+      //   a * inv_delta_x * inv_delta_x * (
+      //     + grid_cache.linear[grid_cache.kernel_linearized(1)  + grid_cache_offset].granular_fluidity
+      //     + grid_cache.linear[grid_cache.kernel_linearized(19) + grid_cache_offset].granular_fluidity
+      //     + grid_cache.linear[grid_cache.kernel_linearized(9)  + grid_cache_offset].granular_fluidity
+      //     + grid_cache.linear[grid_cache.kernel_linearized(11) + grid_cache_offset].granular_fluidity
+      //     -(grid_cache.linear[grid_cache.kernel_linearized(10) + grid_cache_offset].granular_fluidity * 4.0_f)
+      //   )
+      //   +
+      //   (1-a) * (0.5_f) * inv_delta_x * inv_delta_x * (
+      //     + grid_cache.linear[grid_cache.kernel_linearized(0)  + grid_cache_offset].granular_fluidity
+      //     + grid_cache.linear[grid_cache.kernel_linearized(20) + grid_cache_offset].granular_fluidity
+      //     + grid_cache.linear[grid_cache.kernel_linearized(2)  + grid_cache_offset].granular_fluidity
+      //     + grid_cache.linear[grid_cache.kernel_linearized(18) + grid_cache_offset].granular_fluidity
+      //     -(grid_cache.linear[grid_cache.kernel_linearized(10) + grid_cache_offset].granular_fluidity * 4.0_f)
+      //   );
+      // real lap_y2 =
+      //   a * inv_delta_x * inv_delta_x * (
+      //     + grid_cache.linear[grid_cache.kernel_linearized(7)  + grid_cache_offset].granular_fluidity
+      //     + grid_cache.linear[grid_cache.kernel_linearized(25) + grid_cache_offset].granular_fluidity
+      //     + grid_cache.linear[grid_cache.kernel_linearized(15) + grid_cache_offset].granular_fluidity
+      //     + grid_cache.linear[grid_cache.kernel_linearized(17) + grid_cache_offset].granular_fluidity
+      //     -(grid_cache.linear[grid_cache.kernel_linearized(16) + grid_cache_offset].granular_fluidity * 4.0_f)
+      //   )
+      //   +
+      //   (1-a) * (0.5_f) * inv_delta_x * inv_delta_x * (
+      //     + grid_cache.linear[grid_cache.kernel_linearized(6)  + grid_cache_offset].granular_fluidity
+      //     + grid_cache.linear[grid_cache.kernel_linearized(26) + grid_cache_offset].granular_fluidity
+      //     + grid_cache.linear[grid_cache.kernel_linearized(8)  + grid_cache_offset].granular_fluidity
+      //     + grid_cache.linear[grid_cache.kernel_linearized(24) + grid_cache_offset].granular_fluidity
+      //     -(grid_cache.linear[grid_cache.kernel_linearized(16) + grid_cache_offset].granular_fluidity * 4.0_f)
+      //   );
+      // // in z direction
+      // real lap_z1 =
+      //   a * inv_delta_x * inv_delta_x * (
+      //     + grid_cache.linear[grid_cache.kernel_linearized(3)  + grid_cache_offset].granular_fluidity
+      //     + grid_cache.linear[grid_cache.kernel_linearized(21) + grid_cache_offset].granular_fluidity
+      //     + grid_cache.linear[grid_cache.kernel_linearized(9)  + grid_cache_offset].granular_fluidity
+      //     + grid_cache.linear[grid_cache.kernel_linearized(15) + grid_cache_offset].granular_fluidity
+      //     -(grid_cache.linear[grid_cache.kernel_linearized(12) + grid_cache_offset].granular_fluidity * 4.0_f)
+      //   )
+      //   +
+      //   (1-a) * (0.5_f) * inv_delta_x * inv_delta_x * (
+      //     + grid_cache.linear[grid_cache.kernel_linearized(0)  + grid_cache_offset].granular_fluidity
+      //     + grid_cache.linear[grid_cache.kernel_linearized(24) + grid_cache_offset].granular_fluidity
+      //     + grid_cache.linear[grid_cache.kernel_linearized(6)  + grid_cache_offset].granular_fluidity
+      //     + grid_cache.linear[grid_cache.kernel_linearized(18) + grid_cache_offset].granular_fluidity
+      //     -(grid_cache.linear[grid_cache.kernel_linearized(12) + grid_cache_offset].granular_fluidity * 4.0_f)
+      //   );
+      // real lap_z2 =
+      //   a * inv_delta_x * inv_delta_x * (
+      //     + grid_cache.linear[grid_cache.kernel_linearized(5)  + grid_cache_offset].granular_fluidity
+      //     + grid_cache.linear[grid_cache.kernel_linearized(23) + grid_cache_offset].granular_fluidity
+      //     + grid_cache.linear[grid_cache.kernel_linearized(11) + grid_cache_offset].granular_fluidity
+      //     + grid_cache.linear[grid_cache.kernel_linearized(17) + grid_cache_offset].granular_fluidity
+      //     -(grid_cache.linear[grid_cache.kernel_linearized(14) + grid_cache_offset].granular_fluidity * 4.0_f)
+      //   )
+      //   +
+      //   (1-a) * (0.5_f) * inv_delta_x * inv_delta_x * (
+      //     + grid_cache.linear[grid_cache.kernel_linearized(2)  + grid_cache_offset].granular_fluidity
+      //     + grid_cache.linear[grid_cache.kernel_linearized(26) + grid_cache_offset].granular_fluidity
+      //     + grid_cache.linear[grid_cache.kernel_linearized(8)  + grid_cache_offset].granular_fluidity
+      //     + grid_cache.linear[grid_cache.kernel_linearized(20) + grid_cache_offset].granular_fluidity
+      //     -(grid_cache.linear[grid_cache.kernel_linearized(14) + grid_cache_offset].granular_fluidity * 4.0_f)
+      //   );
+      // // middle
+      // real lap_ = inv_delta_x * inv_delta_x * (
+      //     + grid_cache.linear[grid_cache.kernel_linearized(22) + grid_cache_offset].granular_fluidity
+      //     + grid_cache.linear[grid_cache.kernel_linearized(4)  + grid_cache_offset].granular_fluidity
+      //     + grid_cache.linear[grid_cache.kernel_linearized(16) + grid_cache_offset].granular_fluidity
+      //     + grid_cache.linear[grid_cache.kernel_linearized(10) + grid_cache_offset].granular_fluidity
+      //     + grid_cache.linear[grid_cache.kernel_linearized(14) + grid_cache_offset].granular_fluidity
+      //     + grid_cache.linear[grid_cache.kernel_linearized(12) + grid_cache_offset].granular_fluidity
+      //     -(grid_cache.linear[grid_cache.kernel_linearized(13) + grid_cache_offset].granular_fluidity * 6.0_f)
+      //   );  
+      // // all
+      // real laplacian_gf = (
+      //     + lap_x1 + lap_x2
+      //     + lap_y1 + lap_y2
+      //     + lap_z1 + lap_z2
+      //     - lap_
+      //   )/7;
+
+      // Option 3 (27-point 2nd-order scheme):
+      // int a1 = 0.1009_f, a2 = 0.0011_f, a3 = 0.6952_f;
+      // // ---------
+      // real uR211 =
+      //   a1 * (
+      //     grid_cache.linear[grid_cache.kernel_linearized(19) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(25) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(21) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(23) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(13) + grid_cache_offset].granular_fluidity
+      //   ) +
+      //   a2 * (
+      //     grid_cache.linear[grid_cache.kernel_linearized(18) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(26) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(20) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(24) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(10) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(16) + grid_cache_offset].granular_fluidity
+      //   ) + 
+      //   a3 * (
+      //     grid_cache.linear[grid_cache.kernel_linearized(22) + grid_cache_offset].granular_fluidity
+      //   );
+      // // ---------
+      // real uR111 =
+      //   a1 * (
+      //     grid_cache.linear[grid_cache.kernel_linearized(10) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(16) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(12) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(14) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(22) + grid_cache_offset].granular_fluidity
+      //   ) +
+      //   a2 * (
+      //     grid_cache.linear[grid_cache.kernel_linearized(9) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(11) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(15) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(17) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(19) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(25) + grid_cache_offset].granular_fluidity
+      //   ) + 
+      //   a3 * (
+      //     grid_cache.linear[grid_cache.kernel_linearized(13) + grid_cache_offset].granular_fluidity
+      //   );
+      // // ---------
+      // real uL011 =
+      //   a1 * (
+      //     grid_cache.linear[grid_cache.kernel_linearized(1) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(7) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(3) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(5) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(13) + grid_cache_offset].granular_fluidity
+      //   ) +
+      //   a2 * (
+      //     grid_cache.linear[grid_cache.kernel_linearized(0) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(2) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(6) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(8) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(10) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(16) + grid_cache_offset].granular_fluidity
+      //   ) + 
+      //   a3 * (
+      //     grid_cache.linear[grid_cache.kernel_linearized(4) + grid_cache_offset].granular_fluidity
+      //   );
+      // // ---------
+      // real uL111 =
+      //   a1 * (
+      //     grid_cache.linear[grid_cache.kernel_linearized(10) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(16) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(12) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(14) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(4) + grid_cache_offset].granular_fluidity
+      //   ) +
+      //   a2 * (
+      //     grid_cache.linear[grid_cache.kernel_linearized(9) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(11) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(15) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(17) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(1) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(7) + grid_cache_offset].granular_fluidity
+      //   ) + 
+      //   a3 * (
+      //     grid_cache.linear[grid_cache.kernel_linearized(13) + grid_cache_offset].granular_fluidity
+      //   );
+      // // ---------
+      // real uF121 =
+      //   a1 * (
+      //     grid_cache.linear[grid_cache.kernel_linearized(9) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(15) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(3) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(21) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(13) + grid_cache_offset].granular_fluidity
+      //   ) +
+      //   a2 * (
+      //     grid_cache.linear[grid_cache.kernel_linearized(0) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(6) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(18) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(24) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(10) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(16) + grid_cache_offset].granular_fluidity
+      //   ) + 
+      //   a3 * (
+      //     grid_cache.linear[grid_cache.kernel_linearized(12) + grid_cache_offset].granular_fluidity
+      //   );
+      // // ---------
+      // real uF111 =
+      //   a1 * (
+      //     grid_cache.linear[grid_cache.kernel_linearized(10) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(16) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(4) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(22) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(12) + grid_cache_offset].granular_fluidity
+      //   ) +
+      //   a2 * (
+      //     grid_cache.linear[grid_cache.kernel_linearized(1) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(7) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(19) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(25) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(9) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(15) + grid_cache_offset].granular_fluidity
+      //   ) + 
+      //   a3 * (
+      //     grid_cache.linear[grid_cache.kernel_linearized(13) + grid_cache_offset].granular_fluidity
+      //   );
+      // // ---------
+      // real uB101 =
+      //   a1 * (
+      //     grid_cache.linear[grid_cache.kernel_linearized(11) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(17) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(5) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(23) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(13) + grid_cache_offset].granular_fluidity
+      //   ) +
+      //   a2 * (
+      //     grid_cache.linear[grid_cache.kernel_linearized(2) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(8) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(20) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(26) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(10) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(16) + grid_cache_offset].granular_fluidity
+      //   ) + 
+      //   a3 * (
+      //     grid_cache.linear[grid_cache.kernel_linearized(14) + grid_cache_offset].granular_fluidity
+      //   );
+      // // ---------
+      // real uB111 =
+      //   a1 * (
+      //     grid_cache.linear[grid_cache.kernel_linearized(10) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(16) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(4) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(22) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(14) + grid_cache_offset].granular_fluidity
+      //   ) +
+      //   a2 * (
+      //     grid_cache.linear[grid_cache.kernel_linearized(1) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(7) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(19) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(25) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(11) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(17) + grid_cache_offset].granular_fluidity
+      //   ) + 
+      //   a3 * (
+      //     grid_cache.linear[grid_cache.kernel_linearized(13) + grid_cache_offset].granular_fluidity
+      //   );
+      // // ---------
+      // real uD112 =
+      //   a1 * (
+      //     grid_cache.linear[grid_cache.kernel_linearized(9) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(11) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(1) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(19) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(13) + grid_cache_offset].granular_fluidity
+      //   ) +
+      //   a2 * (
+      //     grid_cache.linear[grid_cache.kernel_linearized(0) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(2) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(18) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(20) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(12) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(14) + grid_cache_offset].granular_fluidity
+      //   ) + 
+      //   a3 * (
+      //     grid_cache.linear[grid_cache.kernel_linearized(10) + grid_cache_offset].granular_fluidity
+      //   );
+      // // ---------
+      // real uD111 =
+      //   a1 * (
+      //     grid_cache.linear[grid_cache.kernel_linearized(12) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(14) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(4) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(22) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(10) + grid_cache_offset].granular_fluidity
+      //   ) +
+      //   a2 * (
+      //     grid_cache.linear[grid_cache.kernel_linearized(3) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(5) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(21) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(23) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(9) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(11) + grid_cache_offset].granular_fluidity
+      //   ) + 
+      //   a3 * (
+      //     grid_cache.linear[grid_cache.kernel_linearized(13) + grid_cache_offset].granular_fluidity
+      //   );
+      // // ---------
+      // real uU110 =
+      //   a1 * (
+      //     grid_cache.linear[grid_cache.kernel_linearized(15) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(17) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(7) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(25) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(13) + grid_cache_offset].granular_fluidity
+      //   ) +
+      //   a2 * (
+      //     grid_cache.linear[grid_cache.kernel_linearized(6) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(8) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(24) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(26) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(12) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(14) + grid_cache_offset].granular_fluidity
+      //   ) + 
+      //   a3 * (
+      //     grid_cache.linear[grid_cache.kernel_linearized(16) + grid_cache_offset].granular_fluidity
+      //   );
+      // // ---------
+      // real uU111 =
+      //   a1 * (
+      //     grid_cache.linear[grid_cache.kernel_linearized(12) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(14) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(4) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(22) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(16) + grid_cache_offset].granular_fluidity
+      //   ) +
+      //   a2 * (
+      //     grid_cache.linear[grid_cache.kernel_linearized(3) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(5) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(21) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(23) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(15) + grid_cache_offset].granular_fluidity +
+      //     grid_cache.linear[grid_cache.kernel_linearized(17) + grid_cache_offset].granular_fluidity
+      //   ) + 
+      //   a3 * (
+      //     grid_cache.linear[grid_cache.kernel_linearized(13) + grid_cache_offset].granular_fluidity
+      //   );
+      // // all ------------
+      // real laplacian_gf = 
+      //   inv_delta_x * inv_delta_x * (
+      //     + (uR211 - uR111) - (uL111 - uL011)
+      //     + (uF121 - uF111) - (uB111 - uB101)
+      //     + (uD112 - uD111) - (uU111 - uU110)
+      //   );  
+
+      // particle loop
       for (int k = particle_begin; k < particle_end; k++) {
         Particle &p = *allocator[particles[k]];
         real delta_t = base_delta_t;
@@ -921,7 +1781,7 @@ void MPM<3>::resample_optimized() {
     float *addr =                                                              \
         (float *)&grid_cache                                                   \
             .linear[grid_cache.kernel_linearized(node_id) + grid_cache_offset] \
-            .v;                                                                \
+            .velocity_and_mass;                                                \
     __m128 grid_vel = _mm_load_ps(addr);                                       \
     __m128 w =                                                                 \
         _mm_set1_ps(kernels[node_id / 9][node_id / 3 % 3][node_id % 3]);       \
@@ -938,7 +1798,7 @@ void MPM<3>::resample_optimized() {
     float *addr =                                                              \
         (float *)&grid_cache                                                   \
             .linear[grid_cache.kernel_linearized(node_id) + grid_cache_offset] \
-            .v;                                                                \
+            .velocity_and_mass;                                                \
     __m128 grid_vel = _mm_load_ps(addr);                                       \
     __m128 dw_w = kernels_linearized[node_id].v;                               \
     v_ = _mm_fmadd_ps(grid_vel, broadcast(dw_w, dim), v_);                     \
@@ -976,8 +1836,13 @@ void MPM<3>::resample_optimized() {
         cdg_[2] = _mm_fmadd_ps(delta_t_vec, cdg_[2], _mm_set_ps(0, 1, 0, 0));
 #endif
         Matrix &cdg = reinterpret_cast<Matrix &>(cdg_[0]);
-        p.plasticity(cdg);
+
+        // added: Update granular fluidity and deformation gradient
+        p.plasticity(cdg, laplacian_gf);
+
+        // advect particles
         p.pos.v = _mm_fmadd_ps(v_, delta_t_vec, p.pos.v);
+
       }
     }
   };

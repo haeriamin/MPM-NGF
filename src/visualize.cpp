@@ -19,7 +19,7 @@ void MPM<dim>::write_partio(const std::string &file_name) const {
   Partio::ParticlesDataMutable *parts = Partio::create();
   Partio::ParticleAttribute posH, vH, mH, typeH, normH, statH, boundH, distH,
       debugH, indexH, limitH, apicH,
-      sCaseH, smH, j2sH; // added
+      gfH, prH, muH, rigid_impulseH, isFreeH; // added
 
   bool verbose = config_backup.get("verbose_bgeo", false);
 
@@ -30,9 +30,12 @@ void MPM<dim>::write_partio(const std::string &file_name) const {
   vH = parts->addAttribute("v", Partio::VECTOR, 3);
 
   // added:
-  sCaseH = parts->addAttribute("sCase", Partio::INT, 1); // stress case
-  smH    = parts->addAttribute("sm", Partio::FLOAT, 1);  // mean stress
-  j2sH   = parts->addAttribute("j2s", Partio::FLOAT, 1); // J2 square
+  gfH = parts->addAttribute("gf", Partio::FLOAT, 1); // granular fluidity
+  prH = parts->addAttribute("pr", Partio::FLOAT, 1); // pressure
+  muH = parts->addAttribute("mu", Partio::FLOAT, 1); // friction coeff
+  rigid_impulseH = parts->addAttribute("rigid_impulse", Partio::VECTOR, 3);
+  isFreeH = parts->addAttribute("free", Partio::INT, 1);
+  // distH = parts->addAttribute("boundary_distance", Partio::FLOAT, 1);
 
   if (verbose) {
     mH = parts->addAttribute("m", Partio::VECTOR, 1);
@@ -90,9 +93,13 @@ void MPM<dim>::write_partio(const std::string &file_name) const {
     float32 *p_p = parts->dataWrite<float32>(posH, idx);
 
     // added:
-    int *sCase_p   = parts->dataWrite<int>(sCaseH, idx);   // stress case
-    float32 *sm_p  = parts->dataWrite<float32>(smH, idx);  // mean stress
-    float32 *j2s_p = parts->dataWrite<float32>(j2sH, idx); // J2 square
+    
+    float32 *gf_p = parts->dataWrite<float32>(gfH, idx);  // granular fluidity
+    float32 *pr_p = parts->dataWrite<float32>(prH, idx);  // pressure
+    float32 *mu_p = parts->dataWrite<float32>(muH, idx);  // friction coeff
+    float32 *rigid_impulse_p = parts->dataWrite<float32>(rigid_impulseH, idx);
+    int *isFree_p = parts->dataWrite<int>(isFreeH, idx);
+    // float32 *dist_p = parts->dataWrite<float32>(distH, idx);
 
     Vector pos = p->pos;
 
@@ -108,16 +115,21 @@ void MPM<dim>::write_partio(const std::string &file_name) const {
     limit_p[2] = p->cfl_limit;
 
     // added:
-    sCase_p[0] = p->sCase; // stress case
-    sm_p[0]    = p->sm;    // mean stress
-    j2s_p[0]   = p->j2s;   // J2 square
+    gf_p[0] = p->gf;  // granular fluidity
+    pr_p[0] = p->p;  // pressure
+    mu_p[0] = p->mu_visual;  // friction coeff
+    Vector rf = p->rigid_impulse;
+    for (int k = 0; k < dim; k++)
+      rigid_impulse_p[k] = rf[k];
+    isFree_p[0] = int(p->is_free);
+    // dist_p[0] = p->boundary_distance * inv_delta_x;
 
   }
   Partio::write(file_name.c_str(), *parts);
   parts->release();
 }
 
-//------------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 template <int dim>
 void MPM<dim>::write_rigid_body(RigidBody<dim> const *rigid,
                                 const std::string &file_name) const {
@@ -148,12 +160,15 @@ void MPM<dim>::write_rigid_body(RigidBody<dim> const *rigid,
 
     fclose(f);
   }
+  // 3D
   TC_STATIC_ELSE {
     auto &mesh = rigid->mesh;
     auto const &trans = rigid->get_mesh_to_world();
 
     std::string fn = file_name + std::string(".obj");
+
     FILE *f = std::fopen(fn.c_str(), "w");
+
     for (auto &elem : mesh->elements) {
       for (int i = 0; i < dim; i++) {
         Vector v = transform(trans, elem.v[i]);
@@ -168,11 +183,26 @@ void MPM<dim>::write_rigid_body(RigidBody<dim> const *rigid,
       trash(_);
     }
     std::fclose(f);
+
+    // added
+    std::string gn = file_name + std::string(".txt");
+    FILE *g = std::fopen(gn.c_str(), "w");
+    Vector force = rigid->rigid_force;
+    Vector torque = rigid->rigid_torque;
+    Vector position = rigid->position;
+    fmt::print(g, "{} {} {} {} {} {} {} {} {}\n",
+      force[0], force[1], force[2],
+      torque[0], torque[1], torque[2],
+      position[0], position[1], position[2]
+    );
+    std::fclose(g);
+    // end
+
   }
   TC_STATIC_END_IF
 }
 
-//------------------------------------------------------------------------------
+// added -----------------------------------------------------------------------
 template <int dim>
 void MPM<dim>::write_particle(const std::string &file_name) const {
     auto particles_sorted = particles;
@@ -185,7 +215,7 @@ void MPM<dim>::write_particle(const std::string &file_name) const {
     for (auto p_i : particles_sorted) {
       const Particle *p = allocator.get_const(p_i);
 
-  // int index_p  = p->id;
+      // int index_p  = p->id;
       Vector pos   = p->pos;
       Vector vel   = p->get_velocity();
       int type_p   = int(p->is_rigid());
@@ -200,7 +230,7 @@ void MPM<dim>::write_particle(const std::string &file_name) const {
     }
     std::fclose(f);
 }
-//------------------------------------------------------------------------------
+// end
 
 template <>
 void MPM<3>::visualize() const {
@@ -220,9 +250,8 @@ template void MPM<2>::write_rigid_body(RigidBody<2> const *rigid,
 template void MPM<3>::write_rigid_body(RigidBody<3> const *rigid,
                                        const std::string &file_name) const;
 
-//------------------------------------------------------------------------------
+//added ------------------------------------------------------------------------
 template void MPM<2>::write_particle(const std::string &file_name) const;
 template void MPM<3>::write_particle(const std::string &file_name) const;
-//------------------------------------------------------------------------------
 
 TC_NAMESPACE_END

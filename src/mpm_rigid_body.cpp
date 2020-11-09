@@ -172,8 +172,8 @@ void MPM<dim>::add_rigid_particle(Config config) {
   // add boundary particle, called from this file ------------------------------
   std::vector<ParticlePtr> added_particles;
   auto add_boundry_particle = [&](
-      Vector position, Vector normal,
-      typename RigidBody<dim>::ElementType *untransformed) {
+    Vector position, Vector normal,
+    typename RigidBody<dim>::ElementType *untransformed) {
     config_new.set("normal", normal)
         .set("rigid", &rigid)
         .set("offset", position - rigid.position);
@@ -210,7 +210,7 @@ void MPM<dim>::add_rigid_particle(Config config) {
   }
   // if there is scripted pos
   if (rigid.pos_func) {
-    rigid.set_infinity_mass();
+    // rigid.set_infinity_mass();  // removed
   }
   // if there is scripted rot
   if (rigid.rot_func) {
@@ -258,7 +258,7 @@ void MPM<dim>::add_rigid_particle(Config config) {
           positions.push_back(position);
         }
       for (auto &position : positions)
-        // add boundry particle
+        // add boundary particle
         add_boundry_particle(position, elem.get_normal(), &elem);
     }
     TC_TRACE("Mesh #elements = {}", mesh->elements.size());
@@ -288,19 +288,22 @@ void MPM<dim>::advect_rigid_bodies(real dt) {
 
   for (auto &r : rigids) {
     auto &rigid = *r;
-    // rotation axix
+    // rotation axis
     if (rigid.rotation_axis.abs_max() > 0.1_f) {
       rigid.enforce_angular_velocity_parallel_to(rigid.rotation_axis);
     }
-    // advance -----------------------------------------------------------------
-    rigid.advance(this->current_t, dt);
 
-    // rigid body gravity ------------------------------------------------------
-    if (config_backup.get("rigidBody_gravity", true)) {
+    // rigid body gravity 
+    if (config_backup.get("rigidBody_gravity", true)) {  // added
       rigid.apply_impulse(this->gravity * rigid.get_mass() * dt, rigid.position);
     }
+    
+    int free_axis_in_position = config_backup.get("free_axis_in_position", 0); // added
 
-    // rotation axix
+    // advance
+    rigid.advance(this->current_t, dt, free_axis_in_position);  // added
+
+    // rotation axis
     if (rigid.rotation_axis.abs_max() > 0.1_f) {
       rigid.enforce_angular_velocity_parallel_to(rigid.rotation_axis);
     }
