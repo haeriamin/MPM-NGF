@@ -253,10 +253,10 @@ class MPM : public Simulation<dim> {
   void write_partio(const std::string &file_name) const;
   void write_rigid_body(RigidBody<dim> const *rigid,
                         const std::string &file_name) const;
-
-//------------------------------------------------------------------------------
+  // added
   void write_particle(const std::string &file_name) const;
-//------------------------------------------------------------------------------
+  void write_dataset(RigidBody<dim> const *rigid,
+                     const std::string &file_name) const;
 
   virtual void add_rigid_particle(Config config);
   virtual std::string get_debug_information() override;
@@ -331,23 +331,32 @@ class MPM : public Simulation<dim> {
     ++(const_cast<MPM<dim> *>(this)->frame_count);
     std::string directory = config_backup.get_string("frame_directory");
     std::string filename;
-//------------------------------------------------------------------------------
-    if (config_backup.get("write_particle_info", false)){
-      if (frame_count%50 == 0 || frame_count == 1) {
-        filename = fmt::format("{}/particle_{:04}", directory, frame_count);
-        write_particle(filename);
-      }
-    }
 
-    if (config_backup.get("write_Houdini_and_rigidbody_info", false)){
-//------------------------------------------------------------------------------
+    if (config_backup.get("write_partio", false)){
       filename = fmt::format("{}/{:04}.bgeo", directory, frame_count);
       write_partio(filename);
+    }
+
+    if (config_backup.get("write_rigid_body", false)){
       // Start from 1 (0 is the background rigid body.)
       for (int i = 1; i < (int)rigids.size(); i++) {
         filename = fmt::format("{}/rigid_{:03}_{:04}", directory, i, frame_count);
         write_rigid_body(rigids[i].get(), filename);
       }
+    }
+
+    // added
+    if (config_backup.get("write_particle", false)){
+      // if (frame_count%50 == 0 || frame_count == 1) {
+        filename = fmt::format("{}/particle_{:04}", directory, frame_count);
+        write_particle(filename);
+      // }
+    }
+
+    // added
+    if (config_backup.get("write_dataset", false)){
+        filename = fmt::format("{}/ds_{:04}", directory, frame_count);
+        write_dataset(rigids[1].get(), filename);
     }
   }
 

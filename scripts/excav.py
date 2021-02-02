@@ -1,6 +1,6 @@
-# Excavation model, by Amin Haeri [ahaeri92@gmail.com]
-
-# Flat plate: 30.5 (12) x 45.7 (18) x 0.6 (0.25) cm (in)
+## Excavation model
+## Amin Haeri [ahaeri92@gmail.com]
+## Mid 2020
 
 # MPM         EXP
 # 1 u     ->  4 m
@@ -15,23 +15,20 @@
 # 0.0100  <-  0.04  m/s (plate's forward velocity)
 # 0.0033  <-  4*(grid size)
 
-# With writing output files
-# 3.9*3600/(23.4*10000) = 0.06 sec/frame for 460K particles (with dimensional analysis)
-# 7.7*60/(20*10000) = 0.002 for 32K particles
-
-import math as m
 import taichi as tc
 
 
 if __name__ == '__main__':
-    r = 251 #251 #301
+    r = 301 #251 #301
     dx = 1/r
-    Scale = 1
-    time_scale = 0.5 * m.sqrt(Scale)
-    velocity_scale = 0.5 * m.sqrt(Scale)
-    verticalTime = 0*time_scale #2.8*time_scale  # 2s for 5cm depth, 0.8s for 2cm depth, with 2.5cm/s mean vel in exp
-    forwardTime = 21*time_scale #19.38
-    stopTime = 0*time_scale #0
+
+    dim_scale = 0.25
+    time_scale = dim_scale*2
+    velocity_scale = dim_scale*2
+
+    verticalTime = 2*time_scale  # 2s for 5cm depth, 0.8s for 2cm depth, with 2.5cm/s mean vel in exp
+    forwardTime = 21*time_scale  #19.38
+    stopTime = 0*time_scale
     finalTime = forwardTime + 2*verticalTime + 2*stopTime
     frameRate = 60
 
@@ -41,15 +38,15 @@ if __name__ == '__main__':
     G = 9.81
 
     offset = 0.05/2
-    x_bin = 3 * Scale  #3 #3.5 #4 #5
-    y_bin = 0.3 * Scale  #0.225 #0.25 #0.375 #0.414
-    z_bin = 1.75 * Scale  #1.70 #1.75 #2.0 #2.5
+    x_bin = 4  #3 #3.5 #4 #5
+    y_bin = 0.375  #0.225 #0.25 #0.375 #0.414
+    z_bin = 1.75  #1.70 #1.75 #2.0 #2.5
     bin_size = tc.Vector(x_bin, y_bin, z_bin)
 
     # --------------------------------------------------------------------------
     mpm = tc.dynamics.MPM(
         res=(r, r, r),
-        base_delta_t=1e-4,#3.5e-4,#1e-4,  # can't be larger
+        base_delta_t=4e-5,  # can't be larger than 3.5e-4
         frame_dt=1/frameRate,
         num_frames=finalTime*frameRate,
         num_threads=-1,
@@ -70,17 +67,18 @@ if __name__ == '__main__':
         print_rigid_body_state=False,  # print pos, vel and angVel on terminal
         clean_boundary=False,  # def: true, clear boundary particles
         warn_particle_deletion=False,
-        snapshots=False,
-        verbose_bgeo=False,  # write other particles attributes, "visualize.cpp"
-        write_particle_info=False,
-
-        write_Houdini_and_rigidbody_info=True,
         cdf_3d_modified=True,
         compute_particle_impulses=True,
-
         visualize_particle_impulses=False,
         affect_particle_impulses=False,
         particle_bc_at_levelset=False, 
+
+        snapshots=False,
+        verbose_bgeo=False,
+        write_particle=False,
+        write_rigid_body=False,
+        write_partio=True,
+        write_dataset=False,
     )
 
     # level-set ----------------------------------------------------------------
@@ -88,8 +86,8 @@ if __name__ == '__main__':
     levelset.add_plane(tc.Vector(1, 0, 0), -offset)
     levelset.add_plane(tc.Vector(0, 1, 0), -offset)
     levelset.add_plane(tc.Vector(0, 0, 1), -offset)
-    levelset.add_plane(tc.Vector(-1, 0, 0), offset+x_bin/10*Scale)
-    levelset.add_plane(tc.Vector(0, 0, -1), offset+z_bin/10*Scale)
+    levelset.add_plane(tc.Vector(-1, 0, 0), offset+x_bin/10)
+    levelset.add_plane(tc.Vector(0, 0, -1), offset+z_bin/10)
     levelset.set_friction(FrictionLS)
     mpm.set_levelset(levelset, False)
 
@@ -103,6 +101,12 @@ if __name__ == '__main__':
         filename='projects/mpm/data/cube_smooth.obj',
     ) * 4 #1
 
+    ## Check 1: dt < (1/res^2)*t0/2/A^2/d^2
+    ## Check 2: dt < (1/res)*sqrt(rho/E)
+    ## Check 3: mu_s > sqrt(3)*(1-(2*nu))/(1+nu)
+
+    E_mod = 15e6*dim_scale
+    nu = 0.3
     grain_density = 2583
     packing_fraction = 0.67
     critical_density = packing_fraction * grain_density
@@ -110,19 +114,19 @@ if __name__ == '__main__':
         type='nonlocal',
         pd=True,
         density_tex=tex.id,
-        density=grain_density,  # verified
+        density=grain_density,
         critical_density=critical_density,
-        packing_fraction=packing_fraction, #0.60, #0.67  # verified
+        packing_fraction=packing_fraction,
 
-        S_mod=6.0e4,
-        B_mod=1.0e5,
+        S_mod=E_mod/2/(1+nu),
+        B_mod=E_mod/3/(1-2*nu),
         A_mat=0.48,
-        dia=0.0003/4,  # verified
+        dia=0.0003*dim_scale,  # verified
 
         # These 3 parameters are corrolated [local, mu_2-mu_s=0.2616] (but not from [PhD nonlocal])
         # mu_s should be larger than sqrt(3)*(1-(2*nu))/(1+nu)
-        mu_s=.7000, #.7000 ~ 35deg
-        mu_2=.9616, #.9616 ~ 44deg
+        mu_s=.7000, # 35deg
+        mu_2=.9616, # 44deg
         I_0=0.278,
 
         # Larger this larger oscillations & denser sand
@@ -149,9 +153,9 @@ if __name__ == '__main__':
         #                      offset+(2.04*y_bin/10)-speed*(verticalTime),
         #                      offset+0.50*z_bin/10)
 
-        offset_coeff = 1.08 #1.07 #1.06 #0.9
-        depth = .0125+1*dx #4.7625*dx*Scale #=.0125/dx+1 #0
-        depth_coeff = 2 #2.04 for 3.8 deg #1.925 for being in soil #was 2.5 or 2.7
+        offset_coeff = 0.9 #1.08 #1.07 #1.06 #0.9
+        depth = 0#.0125+1*dx #4.7625*dx #=.0125/dx+1 #0
+        depth_coeff = 2.04 #2.04 for 3.8 deg #1.925 for being in soil #was 2.5 or 2.7
         if (t <= verticalTime):
             speed = (0.0250*velocity_scale) # m/sec
             return tc.Vector(offset+offset_coeff*x_bin/10
@@ -198,9 +202,9 @@ if __name__ == '__main__':
         rotation_axis=(0, 0, 1),
         friction=FrictionRB,
         scripted_position=tc.function13(position_function),
-        scripted_rotation=tc.constant_function13(tc.Vector(0, 0, 90-30.8)), #3.8
-        scale=(0.0763*Scale, 0.0070, 0.1142*Scale),  # thickness should be at least equal to 2dx  // was 0.0050 and 1.5x
-        # scale=(0.0763*Scale, dx, 0.1142*Scale),
+        scripted_rotation=tc.constant_function13(tc.Vector(0, 0, 90-3.8)), #3.8 #30.8
+        scale=(0.0763, 0.0070, 0.1142),  # thickness should be at least equal to 2dx  // was 0.0050 and 1.5x
+        # scale=(0.0763, dx, 0.1142),
         codimensional=False, #False
         mesh_fn='projects/mpm/data/plate_houdini.obj',
     )

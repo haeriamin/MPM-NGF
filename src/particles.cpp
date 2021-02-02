@@ -911,8 +911,8 @@ class NonlocalParticle : public MPMParticle<dim> {
   void initialize(const Config &config) override {
     Base::initialize(config);
     // Conversion ref: https://en.wikipedia.org/wiki/Elastic_modulus
-    S_mod = config.get("S_mod", 3.4483e3_f); // for E 1e4 and nu 0.45
-    B_mod = config.get("B_mod", 3.3333e4_f); // "
+    S_mod = config.get("S_mod", 3.4483e3_f);
+    B_mod = config.get("B_mod", 3.3333e4_f);
     A_mat = config.get("A_mat", 0.48_f);
     dia = config.get("dia", 0.005_f);
     rho_s = config.get("density", 2550.0_f);
@@ -954,7 +954,10 @@ class NonlocalParticle : public MPMParticle<dim> {
 
     this->dg_t = cdg * this->dg_t;  // dg_t @ n+1
     real rho = this->get_mass() / this->vol / determinant(this->dg_t);
-    
+
+    // this->dg_p_det = determinant(this->dg_p);
+    // this->dg_p_inv_det = determinant(inverse(this->dg_p));
+
     Matrix dg_el = this->dg_t * inverse(this->dg_p);  // dg_e @ tr
     Matrix u, v, sig;
     svd(dg_el, u, sig, v);
@@ -976,7 +979,7 @@ class NonlocalParticle : public MPMParticle<dim> {
 
     // Disconnected
     if (rho < rho_c || this->p <= 0.0_f){
-      this->is_free = true;
+      // this->is_free = true;
       this->T = Matrix(0.0_f);
       this->dg_p = this->dg_t;
       this->p = 0.0_f;  // For tagging
@@ -987,7 +990,7 @@ class NonlocalParticle : public MPMParticle<dim> {
     else
     {
       // TC_P(determinant(this->dg_t));
-      this->is_free = false;
+      // this->is_free = false;
 
       mu = std::min(this->tau / p_n, mu_2-eps);  // mu @ n
       real gdot_loc = - ((mu_s - mu) * this->gf)
@@ -1012,7 +1015,7 @@ class NonlocalParticle : public MPMParticle<dim> {
         Np = Matrix(0.0_f);
       }
 
-      // modify gf ////////////////// ???????????????????????????
+      // modify gf ?
       if (p_n == 0.0_f)
       {
         this->gf = std::max(0.0_f, kinematics(cdg, delta_t) / mu_2);
@@ -1041,7 +1044,7 @@ class NonlocalParticle : public MPMParticle<dim> {
       if (this->tau < 0.0_f)
         this->tau = 0.0_f;
       // No plastic deformation if elastic deformation
-      // if (this->tau > tau_trial || tau_trial <= mu_s*this->p)   // removed ????????????????????
+      // if (this->tau > tau_trial || tau_trial <= mu_s*this->p)   // removed ?
       if (this->tau > tau_trial)
         this->tau = tau_trial;
 
@@ -1066,7 +1069,7 @@ class NonlocalParticle : public MPMParticle<dim> {
       // }
     }
 
-    this->mu_visual = mu;
+    // this->mu_visual = mu;
     return 0;
   }
 

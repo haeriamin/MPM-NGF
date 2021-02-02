@@ -406,7 +406,7 @@ void MPM<3>::rasterize_optimized(real delta_t) {
         if (particle_gravity) {
           p.set_velocity(p.get_velocity() + gravity * delta_t);
         }
-        // Note, pos is magnified (0-res) grid pos ------------- PARTICLE POS ??
+        // Note, pos is magnified (0-res) grid pos
         const Vector pos = p.pos * inv_delta_x;
 
         // particle kernel
@@ -419,11 +419,11 @@ void MPM<3>::rasterize_optimized(real delta_t) {
         const Vector v = p.get_velocity();
         const real mass = p.get_mass();
 
-        // added: Disconnection handling
+        // added: Disconnection handling via pressure @ n
         real gf;
         real dist = 0.05_f * delta_x;
-        if (p.p > 0.0_f && !(p.near_boundary() && p.boundary_distance <= dist))  // ?? was ok with excavation
-        // if (p.p > 0.0_f)  // pressure @ n
+        // if (p.p > 0.0_f && !(p.near_boundary() && p.boundary_distance <= dist))  // for excav
+        if (p.p > 0.0_f)
         {
           gf = p.gf;
         }
@@ -460,8 +460,9 @@ void MPM<3>::rasterize_optimized(real delta_t) {
                 continue;
               Vector impulse(0.0_f);
               Vector force_tmp(0.0_f);
-              // if (p.boundary_distance <= 0.05_f * delta_x){  // for excav
+              // if (p.boundary_distance <= 0.05_f * delta_x){  // for excav with 4 ppc
                 Vector rigid_v = r->get_velocity_at(delta_x * grid_pos[node_id]);
+
                 Vector v_acc = v;  // + apic_b_inv_d_mass * dpos / Vector(mass);
                 Vector velocity_change =
                   v_acc -
@@ -470,8 +471,9 @@ void MPM<3>::rasterize_optimized(real delta_t) {
                     rigid_v,
                     p.boundary_normal,
                     r->frictions[(particle_state >> (2 * r->id)) % 2]);
-                impulse = mass * dw_w[dim] * velocity_change
-                        + delta_t_tmp_force * Vector(dw_w);
+                impulse = (mass * dw_w[dim] * velocity_change +
+                          delta_t_tmp_force * Vector(dw_w));
+
                 // added: Force and torque on rigid bodies' center of mass
                 force_tmp = impulse / delta_t;
                 r->rigid_force_tmp += force_tmp;
@@ -479,7 +481,7 @@ void MPM<3>::rasterize_optimized(real delta_t) {
               // }
 
               // Impulse on rigid body boundary particles
-              // TODO: Make it more realistic for visualization only
+              // TODO: Make it more realistic for visualization
               if (config_backup.get("visualize_particle_impulses", false))
               {
                 for (int r_p_i = particle_begin; r_p_i < particle_end; r_p_i++)
@@ -497,7 +499,6 @@ void MPM<3>::rasterize_optimized(real delta_t) {
               // Apply impulses on rigid body
               if (config_backup.get("affect_particle_impulses", false)){
                 r->apply_tmp_impulse(impulse, delta_x * grid_pos[node_id]);
-                // r->apply_tmp_impulse(impulse, delta_x * grid_pos[13]);  // ok for excav
               }
             }
             continue;
@@ -1295,16 +1296,9 @@ void MPM<3>::resample_optimized() {
         //     + (uD112 - uD111) - (uU111 - uU110)
         //   );  
 
-        // added: Modified rb interaction approach
-        real dist = 0.05_f * delta_x;  // 0.5
-        if (p.near_boundary() && p.boundary_distance <= dist)
-        {
-          // v = friction_project(v, v_r, p.boundary_normal, friction_r);  // ok for excav
-          v = friction_project(v, v_r, p.boundary_normal, friction_r)
-            - v_r + (1.0_f-p.boundary_distance/dist) * v_r;
-
-            // laplacian_gf = 0.0_f;
-        }
+        // added: rb interaction modification to prevent leakage
+        if (p.near_boundary() && p.boundary_distance <= 0.05_f*delta_x)
+          v = friction_project(v, v_r, p.boundary_normal, abs(friction_r));
 
         // added: Update granular fluidity and deformation gradient
         plasticity_counter += p.plasticity(cdg, laplacian_gf);

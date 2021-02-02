@@ -11,6 +11,7 @@ if __name__ == '__main__':
     frameRate = 50  # Hz
     Scale = 1 #0.75  # problem scale, has issue with 0.5!
     FrictionRB = -1  # rigidBody friction
+    FrictionFloor = 0 # smooth floor
     FrictionLS = -1  # frictional contact makes motion!
     oneG = 9.81
     micG = .02*oneG
@@ -19,7 +20,7 @@ if __name__ == '__main__':
     mpm = tc.dynamics.MPM(
         res=(r, r, r),
         # delta_x=.003,  # def: 1/res
-        base_delta_t=.0001,
+        base_delta_t=1e-4, #1e-4,#5e-5,
         frame_dt=1/frameRate,  # inverse frame rate (sec or 1/Hz)
         num_frames=finalTime*frameRate,
         num_threads=-1,
@@ -37,16 +38,19 @@ if __name__ == '__main__':
         dirichlet_boundary_radius=0,     # 1/0 means dirichletBoundary is ON/OFF (apply velocity!)
         clean_boundary=False,  # def: true, clear boundary particles
         warn_particle_deletion=True,
-        verbose_bgeo=True,  # write other particles attributes, "visualize.cpp"
-        snapshots=False,
-        write_Houdini_and_rigidbody_info=True,
-        write_particle_info=True,
 
         particle_bc_at_levelset=True, 
-        # cdf_3d_modified=True,
+        cdf_3d_modified=True,
         # compute_particle_impulses=True,
         # visualize_particle_impulses=True,
         # affect_particle_impulses=False,
+
+        snapshots=False,
+        verbose_bgeo=True,  # write other particles attributes, "visualize.cpp"
+        write_particle=True,
+        write_rigid_body=True,
+        write_partio=True,
+        write_dataset=False,
     )
 
     # --------------------------------------------------------------------------
@@ -59,7 +63,7 @@ if __name__ == '__main__':
     levelset.add_cylinder(tc.Vector(.3, 0, .3), .2001*Scale, True)
     # levelset.add_cylinder(tc.Vector(.3, 0, .3), .22*Scale, True)
     # floor:
-    levelset.add_plane(tc.Vector(0, +1, 0), -(.15-(.051*Scale)))
+    # levelset.add_plane(tc.Vector(0, +1, 0), -(.15-(.051*Scale)))
     # top:
     # levelset.add_plane(tc.Vector(0, -1, 0), +(.15+(.050*Scale)))
     # level-set friction
@@ -79,35 +83,49 @@ if __name__ == '__main__':
         filename='projects/mpm/data/tcSoilFine.obj'
     ) * 4 #8  # number of particles per cell (ppc, max sample density)
 
-    # Lower this looser sand
-    # Up to some value (1e5Pa) due to large Me_tr!
-    Y_mod = 1e6 #1e6
+    ## Option 1:
+    E_mod = 1e6 #1e6, 15e4
     nu = 0.3
+    ## Option 2:
+    # Here E is 3e6 Pa and nu is 0.45
+    S_mod=1e6
+    B_mod=10e6
+
+    grain_density = 2550
+    packing_fraction = 0.645 #0.645, 1
+    critical_density = packing_fraction * grain_density
+
+    ## Check 1: dt < (1/res^2)*t0/2/A^2/d^2
+    ## Check 2: dt < (1/res)*sqrt(rho/E)
+    ## Check 3: mu_s > sqrt(3)*(1-(2*nu))/(1+nu)
+
     mpm.add_particles(
         type='nonlocal',
         pd=True,
         density_tex=tex.id,
-        density=2583, #2450
-        critical_density=2583,
-        packing_fraction=1,
+        density=grain_density,
+        critical_density=critical_density,
+        packing_fraction=packing_fraction,
         initial_velocity=(0, 0, 0),
 
-        S_mod=Y_mod/2/(1+nu),
-        B_mod=Y_mod/3/(1-2*nu),
-        # S_mod=5.0e4,#5.0e4,  # in FEM was 5.0e6
-        # B_mod=2.0e4,#2.0e4,  # in FEM was 2.0e7
+        # S_mod=E_mod/2/(1+nu),
+        # B_mod=E_mod/3/(1-2*nu),
+        S_mod=S_mod,  # in FEM was 5.0e6
+        B_mod=B_mod,  # in FEM was 2.0e7
 
-        A_mat=.48,#0.48,#0.58,#0.51
-        dia=0.004*Scale, #0.0003
+        A_mat=0.48,  # 0.48 | 0.58 | 0.51
+        dia=0.004,  # 0.004, 0.0003
 
         # These 3 parameters are corrolated [local, mu_2-mu_s=0.2616] (but not from [PhD nonlocal])
         # mu_s should be larger than sqrt(3)*(1-(2*nu))/(1+nu)
-        mu_s=.6,  # .7000 = 35deg
-        mu_2=1.5, #.6435,  # .9616 = 44deg
+        # mu_s=0.7,
+        # mu_2=0.9616,
+        mu_s=0.3819,
+        mu_2=0.6435,
         I_0=0.278,
 
         # Larger this larger oscillations & denser sand
-        t_0=1e-4, #1e-3 makes g go to infinity because of soil position
+        t_0=1e-4, #1e-4, 1e-3
     )
 
     # --------------------------------------------------------------------------
@@ -148,23 +166,23 @@ if __name__ == '__main__':
     )
 
     # --------------------------------------------------------------------------
-    # Confining plate
-    def position_function(t):
-        time = 0.1
-        if (t <= time):
-            return tc.Vector(0.3, (.048*Scale-.051*Scale)/time*t+(.15+(.051*Scale)), 0.3)
-        else:
-            return tc.Vector(0.3, .15+(.048*Scale), 0.3)
-    confPlate = mpm.add_particles(
-        type='rigid',
-        density=400,
-        scale=(1*Scale, 1*Scale, 1*Scale),
-        scripted_position=tc.function13(position_function),
-        scripted_rotation=tc.constant_function13(tc.Vector(0, 0, 0)),
-        friction=-2,
-        codimensional=True,
-        mesh_fn='projects/mpm/data/conf_plate.obj'
-    )
+    # Confining plate in Micro-G only
+    # def position_function(t):
+    #     time = 0.1
+    #     if (t <= time):
+    #         return tc.Vector(0.3, (.048*Scale-.051*Scale)/time*t+(.15+(.051*Scale)), 0.3)
+    #     else:
+    #         return tc.Vector(0.3, .15+(.048*Scale), 0.3)
+    # confPlate = mpm.add_particles(
+    #     type='rigid',
+    #     density=400,
+    #     scale=(1*Scale, 1*Scale, 1*Scale),
+    #     scripted_position=tc.function13(position_function),
+    #     scripted_rotation=tc.constant_function13(tc.Vector(0, 0, 0)),
+    #     friction=-2,
+    #     codimensional=True,
+    #     mesh_fn='projects/mpm/data/conf_plate.obj'
+    # )
 
     # --------------------------------------------------------------------------
     # change in rotation direction if required
@@ -192,17 +210,17 @@ if __name__ == '__main__':
     #         mesh_fn           = 'projects/mpm/data/cylinderInner.obj'
     # )
     # --------------------------------------------------------------------------
-    # ## floor
-    # floor = mpm.add_particles(
-    #         type              = 'rigid',
-    #         density           = 100000,
-    #         scripted_rotation = tc.constant_function13(tc.Vector(0, 0, 0)),
-    #         scale             = (2.15*Scale, .1*Scale, 2.15*Scale),
-    #         scripted_position = tc.constant_function13(tc.Vector(.3, (.15-(.05*Scale)), .3)),
-    #         friction          = Friction,
-    #         codimensional     = False,
-    #         mesh_fn           = 'projects/mpm/data/cylinder_jet.obj'
-    # )
+    ## floor
+    floor = mpm.add_particles(
+            type              = 'rigid',
+            density           = 100000,
+            scripted_rotation = tc.constant_function13(tc.Vector(0, 0, 0)),
+            scale             = (2.15*Scale, .1*Scale, 2.15*Scale),
+            scripted_position = tc.constant_function13(tc.Vector(.3, (.15-(.052*Scale)), .3)),
+            friction          = FrictionFloor,
+            codimensional     = False,
+            mesh_fn           = 'projects/mpm/data/cylinder_jet.obj'
+    )
     # --------------------------------------------------------------------------
     # ## ceil
     # ceil = mpm.add_particles(

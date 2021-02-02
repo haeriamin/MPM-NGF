@@ -47,12 +47,41 @@ class MPMParticle : public Unit {
   real p;  // added: normal stress (pressure)
   real tau;  // added: shear stress
   real gf;  // added: granular fluidity
-  real mu_visual;  // added: friction coeff (FOR VISUALIZATION ONLY)
-  bool is_free;  // added (FOR VISUALIZATION ONLY)
+  // real mu_visual;  // added: friction coeff (FOR VISUALIZATION ONLY)
+  // bool is_free;  // added (FOR VISUALIZATION ONLY)
   Vector rigid_impulse;  // added: Impulses on rigid boundary particles
   // Matrix apic_c;  // added: c567
+  // real dg_p_det;
+  // real dg_p_inv_det;
 
   // keep the order
+  // TC_IO_DEF_VIRT(v_and_m,
+  //                pos,
+  //                dg_e,
+  //                apic_b,
+  //                boundary_normal,
+  //                boundary_distance,
+  //                vol,
+  //                dt_limit,
+  //                stiffness_limit,
+  //                cfl_limit,
+  //                sticky,
+  //                near_boundary_,
+  //                states,
+  //                id,
+  //                is_rigid_,
+  //                dg_t,
+  //                dg_p,
+  //                T,
+  //                p,
+  //                tau,
+  //                gf,
+  //                mu_visual,
+  //                is_free,
+  //                rigid_impulse,
+  //                dg_p_det,
+  //                dg_p_inv_det,
+  //               );
   TC_IO_DEF_VIRT(v_and_m,
                  pos,
                  dg_e,
@@ -74,9 +103,8 @@ class MPMParticle : public Unit {
                  p,
                  tau,
                  gf,
-                 mu_visual,
-                 is_free,
-                 rigid_impulse);
+                 rigid_impulse
+                );
 
   TC_FORCE_INLINE bool is_rigid() const {
     return is_rigid_;
@@ -126,10 +154,12 @@ class MPMParticle : public Unit {
     p = 1.0_f;
     tau = 0.0_f;
     gf = 1.0_f;  // it should be set correctly, was 1 or 10
-    mu_visual = 0.0_f;
-    is_free = false;
+    // mu_visual = 0.0_f;
+    // is_free = false;
     rigid_impulse = Vector(0.0_f);
     // apic_c = Matrix(0);
+    // dg_p_det = 1.0_f;
+    // dg_p_inv_det = 1.0_f;
   }
 
  public:
