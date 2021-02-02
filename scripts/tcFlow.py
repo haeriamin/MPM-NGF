@@ -1,7 +1,7 @@
-# Taylor-Couette Flow, by Amin Haeri [ahaeri92@gmail.com]
+## Taylor-Couette Flow
 
 import taichi as tc
-# from math import *
+
 
 if __name__ == '__main__':
     r = 251

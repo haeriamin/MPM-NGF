@@ -1,6 +1,4 @@
 ## Excavation model prepared for generating training dataset
-## Amin Haeri [ahaeri92@gmail.com]
-## Early 2021
 
 #!/usr/bin/env python
 

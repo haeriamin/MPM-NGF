@@ -1,6 +1,4 @@
 ## Wheel-soil model
-## Amin Haeri [ahaeri92@gmail.com]
-## Late 2020
 
 # Bin
     # Dimensions = 0.90 m long x 0.193 m wide x 0.35 m tall (2/3 soil)

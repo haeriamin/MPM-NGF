@@ -1,6 +1,4 @@
 ## Excavation model
-## Amin Haeri [ahaeri92@gmail.com]
-## Mid 2020
 
 # MPM         EXP
 # 1 u     ->  4 m

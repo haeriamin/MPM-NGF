@@ -1,6 +1,4 @@
-# Excavation model, by Amin Haeri [ahaeri92@gmail.com]
-
-# Excavator: 306.350 mm width x 226.603 mm height
+## Industrial excavator model
 
 # MPM         EXP
 # 1 u     ->  4 m
@@ -9,8 +7,6 @@
 # 0.2450  <-  1.00  m (bin's width)
 # 0.0100  <-  0.04  m/s (excavator's forward velocity)
 # 0.0033  <-  4*(grid size)
-
-# 3.9*3600/(23.4*10000) = 0.06 sec/frame for 460k particles (with dimensional analysis)
 
 import math as m
 import taichi as tc
