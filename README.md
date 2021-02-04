@@ -1,7 +1,7 @@
 # Modeling rigid body-driven granular flows <br /> via Material Point Method with Nonlocal Granular Fluidity
 #### [[Introduction](https://youtu.be/_iNQWDR8nNA)] [[Paper](https://www.iaarc.org/publications/2020_proceedings_of_the_37th_isarc/efficient_numerical_methods_for_accurate_modeling_of_soil_cutting_operations.html)]
 
-This is a customized version of Taichi MPM written by [Yuanming Hu (MIT CSAIL)](https://github.com/yuanming-hu/taichi_mpm) for modeling granular flows via the Nonlocal Granular Fluidity constitutive model developed by [Prof. Ken Kamrin (MIT)](http://web.mit.edu/kkamrin/www/fluid_solid.html) and their interactions with rigid bodies. The numerical approach is developed under the supervision of [Prof. Krzysztof Skonieczny (Concordia)](http://users.encs.concordia.ca/~kskoniec/).
+This is a customized version of Taichi MPM written by [Yuanming Hu (MIT)](https://github.com/yuanming-hu/taichi_mpm) for modeling granular flows via the Nonlocal Granular Fluidity constitutive model developed by [Prof. Ken Kamrin (MIT)](http://web.mit.edu/kkamrin/www/fluid_solid.html) and their interactions with rigid bodies. The numerical approach is developed under the supervision of [Prof. Krzysztof Skonieczny (Concordia)](http://users.encs.concordia.ca/~kskoniec/).
 
 More instructions will be added soon.
 
