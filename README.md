@@ -7,6 +7,15 @@ More instructions will be added soon.
 
 <img src="https://github.com/haeriamin/files/blob/master/indExcav.gif" alt="drawing" width="410"> <img src="https://github.com/haeriamin/files/blob/master/wheelSoil.gif" alt="drawing" width="410"> <img src="https://github.com/haeriamin/files/blob/master/explate1.gif" alt="drawing" width="410"> <img src="https://github.com/haeriamin/files/blob/master/explate2exp.gif" alt="drawing" width="410"> <img src="https://github.com/haeriamin/files/blob/master/silo.gif" alt="drawing" width="410"> <img src="https://github.com/haeriamin/files/blob/master/tcFlow.gif" alt="drawing" width="410">
 
+
+# Install
+Tested on Ubuntu 16.04 and 18.04:
+
+`cd ~ & wget https://github.com/haeriamin/MPM-NGF/blob/master/modifications/install.sh`
+
+`./install.sh`
+
+
 # Bibtex
 While our journal paper is under review, please cite our conference [paper](https://www.iaarc.org/publications/fulltext/ISARC_2020_Paper_60.pdf) if you use this code for your research: 
 ```
