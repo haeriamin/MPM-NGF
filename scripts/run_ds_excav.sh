@@ -34,6 +34,6 @@ done
 
 # Instructions:
 # Mark it executable using:
-# $ chmod +x ds_job.sh
+# $ chmod +x run_ds_excav.sh
 # Then run it:
-# $ ./ds_job.sh
+# $ ./run_ds_excav.sh
