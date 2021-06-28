@@ -5,9 +5,12 @@ set -x  # Display commands being run
 
 cd ~
 sudo rm -R taichi
+
+# sudo apt-get update -y
 sudo apt install gcc python3-pip
 sudo apt-get install -y python3-dev git build-essential cmake make g++ libx11-dev python3-pyqt5 libtbb2 libtbb-dev
 sudo -H pip3 install numpy scipy pybind11 Flask flask_cors gitpython yapf psutil pyqt5==5.14.0
+# sudo apt-get install -y python3-numpy python3-scipy python3-pybind11 python3-flask
 
 wget https://raw.githubusercontent.com/yuanming-hu/taichi/legacy/install.py
 sudo -H python3 install.py
@@ -28,9 +31,6 @@ export TAICHI_NUM_THREADS=32
 export TAICHI_REPO_DIR=~/taichi
 export PYTHONPATH=$TAICHI_REPO_DIR/python/:$PYTHONPATH
 export PATH=$TAICHI_REPO_DIR/bin/:$PATH
-
-# sudo apt-get update -y
-# sudo apt-get install -y python3-numpy python3-scipy python3-pybind11 python3-flask
 
 source ~/.bashrc
 ti install mpm
