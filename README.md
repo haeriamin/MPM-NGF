@@ -12,7 +12,6 @@ More instructions will be added soon.
 Tested on Ubuntu 16.04 and 18.04:
 
 1. Run
-
 `cd ~ ; wget https://github.com/haeriamin/MPM-NGF/raw/master/modifications/install.sh && chmod +x ./install.sh ; ./install.sh`
 
 2. Install [Houdini Apprentice](https://www.sidefx.com/products/houdini-apprentice) version only for visualization (optional)
