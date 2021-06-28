@@ -28,6 +28,10 @@ export TAICHI_NUM_THREADS=32
 export TAICHI_REPO_DIR=~/taichi
 export PYTHONPATH=$TAICHI_REPO_DIR/python/:$PYTHONPATH
 export PATH=$TAICHI_REPO_DIR/bin/:$PATH
+
+# sudo apt-get update -y
+# sudo apt-get install -y python3-numpy python3-scipy python3-pybind11 python3-flask
+
 source ~/.bashrc
 ti install mpm
 ti build
