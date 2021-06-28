@@ -15,7 +15,7 @@ Tested on Ubuntu 16.04 and 18.04:
 
 3. Download and install [Houdini Apprentice](https://www.sidefx.com/products/houdini-apprentice) for visualization (optional)
 
-More explanations can be found [here](https://github.com/yuanming-hu/taichi_mpm#python-3-api).
+More explanations can be found [here](https://github.com/yuanming-hu/taichi_mpm#particle-attributes).
 
 
 # Bibtex
