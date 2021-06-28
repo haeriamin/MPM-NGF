@@ -13,13 +13,13 @@ sudo -H python3 install.py
 source ~/.bashrc
 
 cd ~/taichi/python/taichi/
-wget -O https://github.com/haeriamin/MPM-NGF/raw/master/modifications/main.py
+sudo wget -O main.py https://github.com/haeriamin/MPM-NGF/raw/master/modifications/main.py
 
 cd ~/taichi/include/taichi/dynamics/
-wget -O https://github.com/haeriamin/MPM-NGF/raw/master/modifications/rigid_body.py
+sudo wget -O rigid_body.h https://github.com/haeriamin/MPM-NGF/raw/master/modifications/rigid_body.h
 
 cd ~/taichi/python/taichi/dynamics/
-wget -O https://github.com/haeriamin/MPM-NGF/raw/master/modifications/mpm.py
+sudo wget -O mpm.py https://github.com/haeriamin/MPM-NGF/raw/master/modifications/mpm.py
 
 cd ~
 source ~/.bashrc
