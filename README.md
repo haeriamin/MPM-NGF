@@ -8,14 +8,14 @@ More instructions will be added soon.
 <img src="https://github.com/haeriamin/files/blob/master/indExcav.gif" alt="drawing" width="410"> <img src="https://github.com/haeriamin/files/blob/master/wheelSoil.gif" alt="drawing" width="410"> <img src="https://github.com/haeriamin/files/blob/master/explate1.gif" alt="drawing" width="410"> <img src="https://github.com/haeriamin/files/blob/master/explate2exp.gif" alt="drawing" width="410"> <img src="https://github.com/haeriamin/files/blob/master/silo.gif" alt="drawing" width="410"> <img src="https://github.com/haeriamin/files/blob/master/tcFlow.gif" alt="drawing" width="410">
 
 
-# Installation and Test
+# Installation and Run Demo
 Tested on Ubuntu 16.04 and 18.04:
 
 1. Run `cd ~ ; wget https://github.com/haeriamin/MPM-NGF/raw/master/modifications/install.sh && chmod +x ./install.sh ; ./install.sh`
 
 2. Run `python3 ~/taichi/projects/mpm/scripts/excav.py`
 
-3. Install [Houdini Apprentice](https://www.sidefx.com/products/houdini-apprentice) version only for visualization (optional)
+3. Download and install [Houdini Apprentice](https://www.sidefx.com/products/houdini-apprentice) version only for visualization (optional)
 
 
 # Bibtex
