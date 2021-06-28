@@ -15,7 +15,7 @@ Tested on Ubuntu 16.04 and 18.04:
 
 2. Run `python3 ~/taichi/projects/mpm/scripts/excav.py`
 
-3. Download and install [Houdini Apprentice](https://www.sidefx.com/products/houdini-apprentice) version only for visualization (optional)
+3. Download and install [Houdini Apprentice](https://www.sidefx.com/products/houdini-apprentice) for visualization (optional)
 
 
 # Bibtex
