@@ -15,6 +15,8 @@ Tested on Ubuntu 16.04 and 18.04:
 
 3. Download and install [Houdini Apprentice](https://www.sidefx.com/products/houdini-apprentice) for visualization (optional)
 
+* More explanations can be found [here](https://github.com/yuanming-hu/taichi_mpm#python-3-api)
+
 
 # Bibtex
 While our journal paper is under review, please cite our conference [paper](https://www.iaarc.org/publications/fulltext/ISARC_2020_Paper_60.pdf) if you use this code for your research: 
