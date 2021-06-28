@@ -15,7 +15,7 @@ Tested on Ubuntu 16.04 and 18.04:
 
 2. Run `./install.sh`
 
-3. Install (Houdini Apprentice)[https://www.sidefx.com/products/houdini-apprentice/] version only for visualization (optional)
+3. Install [Houdini Apprentice](https://www.sidefx.com/products/houdini-apprentice) version only for visualization (optional)
 
 
 # Example Usage 
