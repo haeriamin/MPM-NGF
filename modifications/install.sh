@@ -34,4 +34,6 @@ export PATH=$TAICHI_REPO_DIR/bin/:$PATH
 
 source ~/.bashrc
 ti install mpm
+source ~/.bashrc
 ti build
+source ~/.bashrc
