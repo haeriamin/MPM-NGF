@@ -3,7 +3,7 @@
 
 This is a modified version of Taichi MPM written by [Y. Hu (MIT)](https://github.com/yuanming-hu/taichi_mpm) for modeling granular flows via the Nonlocal Granular Fluidity constitutive model developed by Prof. [K. Kamrin (MIT)](http://web.mit.edu/kkamrin/www/fluid_solid.html) and their interactions with rigid bodies. The numerical approach is developed under the supervision of Prof. [K. Skonieczny (Concordia)](http://users.encs.concordia.ca/~kskoniec/).
 
-<img src="https://github.com/haeriamin/files/blob/master/indExcav.gif" alt="drawing" width="410"> <img src="https://github.com/haeriamin/files/blob/master/wheelSoil.gif" alt="drawing" width="410"> <img src="https://github.com/haeriamin/files/blob/master/explate1.gif" alt="drawing" width="410"> <img src="https://github.com/haeriamin/files/blob/master/explate2exp.gif" alt="drawing" width="410"> <img src="https://github.com/haeriamin/files/blob/master/silo.gif" alt="drawing" width="410"> <img src="https://github.com/haeriamin/files/blob/master/tcFlow.gif" alt="drawing" width="410">
+<img src="https://github.com/haeriamin/files/blob/master/indExcav.gif" alt="drawing" width="400"> <img src="https://github.com/haeriamin/files/blob/master/wheelSoil.gif" alt="drawing" width="400"> <img src="https://github.com/haeriamin/files/blob/master/explate1.gif" alt="drawing" width="400"> <img src="https://github.com/haeriamin/files/blob/master/explate2exp.gif" alt="drawing" width="400"> <img src="https://github.com/haeriamin/files/blob/master/silo.gif" alt="drawing" width="400"> <img src="https://github.com/haeriamin/files/blob/master/tcFlow.gif" alt="drawing" width="400">
 
 
 # Install and Run Demo
