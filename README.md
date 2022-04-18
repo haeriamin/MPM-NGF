@@ -1,5 +1,5 @@
 # Modeling rigid body-driven granular flows <br /> via Material Point Method with Nonlocal Granular Fluidity
-#### [[Introductory Video](https://youtu.be/_iNQWDR8nNA)] [[Paper 1](https://arxiv.org/abs/2111.01523)] [[Paper 2](https://www.iaarc.org/publications/2020_proceedings_of_the_37th_isarc/efficient_numerical_methods_for_accurate_modeling_of_soil_cutting_operations.html)]
+#### [[Introductory Video](https://youtu.be/_iNQWDR8nNA)] [[Paper 1](https://www.sciencedirect.com/science/article/pii/S0045782522001876)] [[Paper 2](https://www.iaarc.org/publications/2020_proceedings_of_the_37th_isarc/efficient_numerical_methods_for_accurate_modeling_of_soil_cutting_operations.html)]
 
 This is a modified version of Taichi MPM written by [Y. Hu (MIT)](https://github.com/yuanming-hu/taichi_mpm) for modeling granular flows via the Nonlocal Granular Fluidity constitutive model developed by Prof. [K. Kamrin (MIT)](http://web.mit.edu/kkamrin/www/fluid_solid.html) and their interactions with rigid bodies. The numerical approach is developed under the supervision of Prof. [K. Skonieczny (Concordia)](http://users.encs.concordia.ca/~kskoniec/).
 
@@ -19,20 +19,23 @@ More explanations can be found [here](https://github.com/yuanming-hu/taichi_mpm#
 
 
 # Bibtex
-Please cite our papers [[1](https://arxiv.org/abs/2111.01523), [2](https://www.iaarc.org/publications/fulltext/ISARC_2020_Paper_60.pdf)] if you use this code for your research: 
+Please cite our papers [[1](https://www.sciencedirect.com/science/article/pii/S0045782522001876), [2](https://www.iaarc.org/publications/fulltext/ISARC_2020_Paper_60.pdf)] if you use this code for your research: 
 ```
-@misc{haeri2021threedim,
-	title={Three-dimensional granular flow continuum modeling via material point method with hyperelastic nonlocal granular fluidity}, 
-	author={Amin Haeri and Krzysztof Skonieczny},
-	year={2021},
-	eprint={2111.01523},
-	archivePrefix={arXiv},
-	primaryClass={cond-mat.soft}
+@article{HAERI2022,
+	title = {Three-dimensionsal granular flow continuum modeling via material point method with hyperelastic nonlocal granular fluidity},
+	journal = {Computer Methods in Applied Mechanics and Engineering},
+	volume = {394},
+	pages = {114904},
+	year = {2022},
+	issn = {0045-7825},
+	doi = {https://doi.org/10.1016/j.cma.2022.114904},
+	url = {https://www.sciencedirect.com/science/article/pii/S0045782522001876},
+	author = {Amin Haeri and Krzysztof Skonieczny}
 }
 ```
 and/or
 ```
-@inproceedings{10.22260/ISARC2020/0085,
+@inproceedings{HAERI2020,
 	doi = {10.22260/ISARC2020/0085},
 	year = 2020,
 	month = {October},
