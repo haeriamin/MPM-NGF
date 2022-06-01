@@ -9,13 +9,21 @@ This is a modified version of Taichi MPM written by [Y. Hu (MIT)](https://github
 # Install and Run Demo
 Tested on Ubuntu 16.04 and 18.04:
 
-1. Run `cd ~ ; wget https://github.com/haeriamin/MPM-NGF/raw/master/modifications/install.sh && chmod +x ./install.sh ; ./install.sh`
+* Install
 
-2. Run `python3 ~/taichi/projects/mpm/scripts/excav.py`
+	```bash
+	cd ~ ; wget https://github.com/haeriamin/MPM-NGF/raw/master/modifications/install.sh && chmod +x ./install.sh ; ./install.sh
+	```
 
-3. Download and install [Houdini Apprentice](https://www.sidefx.com/products/houdini-apprentice) for visualization (optional)
+* Run demo
+	
+	```bash
+	python3 ~/taichi/projects/mpm/scripts/excav.py
+	```
 
-More explanations can be found [here](https://github.com/yuanming-hu/taichi_mpm#particle-attributes).
+* (Optional) Install [Houdini Apprentice](https://www.sidefx.com/products/houdini-apprentice) for visualization 
+
+* More explanations can be found [here](https://github.com/yuanming-hu/taichi_mpm#particle-attributes).
 
 
 # Bibtex
