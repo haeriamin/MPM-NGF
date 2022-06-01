@@ -21,11 +21,11 @@ Tested on Ubuntu 16.04 and 18.04:
 	python3 ~/taichi/projects/mpm/scripts/excav.py
 	```
 
-* (Optional) Visualize using [Houdini Apprentice](https://www.sidefx.com/products/houdini-apprentice)
+* (Optional) Visualize via [Houdini Apprentice](https://www.sidefx.com/products/houdini-apprentice)
 
 	* A sample Houdini file (i.e. `excav.hipnc`) is provided in the parent directory.
 
-* More explanations [here](https://github.com/yuanming-hu/taichi_mpm#particle-attributes)
+* (Optional) More explanations [here](https://github.com/yuanming-hu/taichi_mpm#particle-attributes)
 
 
 # Bibtex
