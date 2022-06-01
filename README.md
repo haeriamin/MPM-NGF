@@ -23,7 +23,7 @@ Tested on Ubuntu 16.04 and 18.04:
 
 * (Optional) Visualize using [Houdini Apprentice](https://www.sidefx.com/products/houdini-apprentice)
 
-	* A sample Houdini file (i.e. `excav.hipnc`) is available in the parent directory.
+	* A sample Houdini file (i.e. `excav.hipnc`) is provided in the parent directory.
 
 * More explanations [here](https://github.com/yuanming-hu/taichi_mpm#particle-attributes)
 
